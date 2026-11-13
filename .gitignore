@@ -1,0 +1,13 @@
+# Build output
+bin/
+obj/
+app/
+dist/
+*.user
+.vs/
+
+# The local .NET SDK (download it with .tools/dotnet-install.ps1)
+.tools/dotnet/
+
+# Private: the API keys built into family & friends releases. Never commit this.
+Core/ApiKeys.Local.cs

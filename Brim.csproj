@@ -1,0 +1,52 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>Brim</AssemblyName>
+    <RootNamespace>Brim</RootNamespace>
+    <Version>0.5.0</Version>
+    <ApplicationIcon>Assets\brim.ico</ApplicationIcon>
+    <!-- Declares Windows 8+ support (needed for the live wallpaper's own layer); keeps WPF's system DPI awareness -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Product>Brim</Product>
+    <NoWarn>$(NoWarn);CS8618;CS8602;CS8604;CS8600;CS8622;CA1416</NoWarn>
+
+    <!-- Memory: a small UI app does not need a background GC thread or profile-guided rejitting -->
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <ServerGarbageCollector>false</ServerGarbageCollector>
+    <TieredPGO>false</TieredPGO>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+
+    <!-- Startup: ship precompiled code so launching doesn't wait on the JIT (about 0.4 s faster) -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <PublishReadyToRun>true</PublishReadyToRun>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Prefer smaller heaps over fewer collections -->
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+    <RuntimeHostConfigurationOption Include="System.GC.RetainVM" Value="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="8.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- Built-in API keys: the private file when it's here, otherwise the empty stand-in (public source) -->
+  <ItemGroup>
+    <Compile Remove="Core\ApiKeys.Empty.cs" Condition="Exists('Core\ApiKeys.Local.cs')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\brim-64.png" />
+    <None Remove="Assets\brim-256.png;Assets\brim-512.png" />
+  </ItemGroup>
+
+</Project>
