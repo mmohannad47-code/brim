@@ -1493,6 +1493,7 @@ public sealed class SettingsWindow : Window
                 Row("Show the temperature", S.WeatherLat == null ? "Set your city in Widgets › Weather first" : $"Weather for {S.WeatherCity}", Switch(S.DockWeather, v => { S.DockWeather = v; Commit(); })),
                 Row("Badges on app icons", "A red dot or count when an app has something for you (a notification, unread messages, or it asked for attention)",
                     Switch(S.DockBadges, v => { S.DockBadges = v; Commit(); })),
+                Row("Task Manager button", "A button next to the tray that opens Task Manager", Switch(S.DockTaskManager, v => { S.DockTaskManager = v; Commit(); })),
                 Info("Tray icons", "Click ⌃ on the dock to bring Windows' taskbar up for a moment")
             );
 

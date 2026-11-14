@@ -231,6 +231,7 @@ public partial class DockWindow : Window
     public void ApplySettings()
     {
         if (docked && S.DockWhenMaximized != "Bar") docked = false;
+        TaskMgrBtn.Visibility = S.DockTaskManager ? Visibility.Visible : Visibility.Collapsed;
         ApplyShape(); // size, gap, roundness and position may have changed
         ApplySurface();
         var (tile, _) = Sizes;
@@ -783,6 +784,10 @@ public partial class DockWindow : Window
     void Start_Click(object sender, RoutedEventArgs e) => Native.TapKeys(Native.VK_LWIN);
     void Clock_Click(object sender, RoutedEventArgs e) => Native.TapKeys(Native.VK_LWIN, (byte)'N');
     void Tray_Click(object sender, RoutedEventArgs e) => Flyout.Toggle("tray", TrayBtn, () => new TrayPanel());
+
+    // Task Manager (Windows' own; on every Windows 10/11 PC)
+    void TaskMgr_Click(object sender, RoutedEventArgs e) =>
+        Launcher.Open(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "Taskmgr.exe"));
     // Same as Windows' corner button: shows the desktop, and clicking again restores every window
     async void Desktop_Click(object sender, RoutedEventArgs e)
     {

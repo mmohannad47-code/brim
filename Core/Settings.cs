@@ -207,6 +207,8 @@ public class AppSettings
     public int DockRadius { get; set; } = 18;
     /// <summary>Red dot / count on dock icons when an app has something for you</summary>
     public bool DockBadges { get; set; } = true;
+    /// <summary>A Task Manager button on the dock</summary>
+    public bool DockTaskManager { get; set; }
     /// <summary>With a maximised window above the dock: Bar (solid, edge to edge) or Floating (wallpaper shows beside it)</summary>
     public string DockWhenMaximized { get; set; } = "Bar";
     public List<ShortcutItem> DockPins { get; set; } = new();

@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -27,6 +27,7 @@ public static class Snapshot
         s.DockReserve = false;
         s.DockAutoHide = false;
         s.HideInFullscreen = false;
+        s.DockTaskManager = true; // show every optional dock button
         ThemeManager.Apply();
         SystemInfo.Sample();
         await MediaService.Instance.InitAsync();

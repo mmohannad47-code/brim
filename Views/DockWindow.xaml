@@ -67,6 +67,9 @@
 
             <Border Width="1" Margin="6,10" Background="{DynamicResource Brim.Stroke}"/>
 
+            <Button x:Name="TaskMgrBtn" Style="{StaticResource Tile}" Width="30" Click="TaskMgr_Click" ToolTip="Task Manager" Visibility="Collapsed">
+                <TextBlock Text="&#xE9D9;" FontFamily="{StaticResource Brim.Icons}" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Button>
             <Button x:Name="TrayBtn" Style="{StaticResource Tile}" Width="30" Click="Tray_Click" ToolTip="Apps running in the background">
                 <TextBlock Text="&#xE70E;" FontFamily="{StaticResource Brim.Icons}" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Button>
