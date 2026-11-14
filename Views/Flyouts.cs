@@ -93,6 +93,9 @@ public sealed class Flyout : Window
         return set;
     }
 
+    /// <summary>The window you were using before the panel opened (focus goes back there when it closes).</summary>
+    IntPtr usedBefore;
+
     HashSet<uint> appPids = new();
     HashSet<IntPtr> allBefore = new();
     DateTime traceUntil;
@@ -295,6 +298,7 @@ public sealed class Flyout : Window
             timer.Stop();
             CloseMenus(menus);
             SafeClose("pointer left the panel and its menus");
+            CloseStubbornMenus(menus);
         };
         timer.Start();
     }
@@ -312,6 +316,22 @@ public sealed class Flyout : Window
             Native.PostMessage(m, 0x0101 /* WM_KEYUP */, new IntPtr(0x1B), IntPtr.Zero);
         }
         CloseBrimMenus?.Invoke();
+    }
+
+    /// <summary>
+    /// Some apps' menus (Steam's, web-based ones) ignore the close signals and only close when they lose focus, the
+    /// way clicking elsewhere closes them: if one is still up a moment later, focus goes back to the window you were
+    /// using before the panel opened (or the desktop).
+    /// </summary>
+    async void CloseStubbornMenus(List<IntPtr> menus)
+    {
+        if (menus.Count == 0) return;
+        await System.Threading.Tasks.Task.Delay(150);
+        if (!menus.Any(m => Native.IsWindow(m) && Native.IsWindowVisible(m))) return;
+        var target = usedBefore != IntPtr.Zero && Native.IsWindow(usedBefore) && Native.IsWindowVisible(usedBefore) && PidOf(usedBefore) != Environment.ProcessId
+            ? usedBefore : Native.GetShellWindow();
+        Native.ForceForeground(target);
+        Log.Note("panel", $"a menu ignored closing: moved focus to {Native.ClassOf(target)} so it closes");
     }
 
     /// <summary>Closes Brim's own tray menu if it's open (set by the tray icon).</summary>
@@ -345,7 +365,8 @@ public sealed class Flyout : Window
             Native.TapKeys(0x1B /* Esc */);
             await System.Threading.Tasks.Task.Delay(180);
         }
-        open = new Flyout(kind, anchor, content());
+        var before = Native.GetForegroundWindow();
+        open = new Flyout(kind, anchor, content()) { usedBefore = before };
         open.Show();
     }
 

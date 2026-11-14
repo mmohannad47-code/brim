@@ -329,6 +329,13 @@ public sealed class TrayService : IDisposable
     static void AskToRegisterAgain(TrayIconItem icon)
     {
         Native.SendNotifyMessage(new IntPtr(icon.HWnd), taskbarCreated, IntPtr.Zero, IntPtr.Zero);
+        Native.PostMessage(new IntPtr(icon.HWnd), (int)taskbarCreated, IntPtr.Zero, IntPtr.Zero); // (some only read their queue)
+        // Hidden message-only windows of the app (where some apps listen)
+        for (IntPtr h = IntPtr.Zero; (h = Native.FindWindowEx(new IntPtr(-3) /* HWND_MESSAGE */, h, null, null)) != IntPtr.Zero;)
+        {
+            Native.GetWindowThreadProcessId(h, out uint mp);
+            if (mp == icon.Pid) Native.SendNotifyMessage(h, taskbarCreated, IntPtr.Zero, IntPtr.Zero);
+        }
         // Some apps listen on their main window rather than the icon's: the other top-level windows of that process too
         Native.EnumWindows((h, _) =>
         {
@@ -352,8 +359,14 @@ public sealed class TrayService : IDisposable
                 await System.Threading.Tasks.Task.Delay(50);
                 if (Instance?.Icons.FirstOrDefault(x => x.Matches(icon.HWnd, icon.UID, icon.Guid)) is { } fresh && fresh != icon) icon = fresh;
             }
-            Log.Note("tray", icon.Callback == 0 ? $"'{icon.Tip}' never said which message it wants" : $"'{icon.Tip}' registered again: message 0x{icon.Callback:X}");
-            if (icon.Callback == 0) return;
+            Log.Note("tray", icon.Callback == 0 ? $"'{icon.Tip}' never said which message it wants: showing Windows' taskbar, where it can be clicked" : $"'{icon.Tip}' registered again: message 0x{icon.Callback:X}");
+            if (icon.Callback == 0)
+            {
+                // This app only talks to Windows' own tray: bring that up for a moment so the icon can be clicked there
+                Brim.Views.Flyout.CloseOpen();
+                TaskbarManager.Peek();
+                return;
+            }
         }
         bool allowed = Native.AllowSetForegroundWindow(icon.Pid);
         // Give the app's own (hidden) tray window focus first, like Windows' taskbar does. Apps show their menu
