@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -83,6 +84,8 @@ public static class IconHelper
         // Store apps saved as "shell:AppsFolder\<app id>"
         if (path.StartsWith("shell:", StringComparison.OrdinalIgnoreCase)) return ForShellItem(path);
         if (cache.TryGetValue(path, out var hit)) return hit;
+        // A Store app's exe: the icon Start shows for it (its exe often has none, and its folder moves on update)
+        if (StoreApps.Find(path) is { } store && ForShellItem(store.ShellPath) is { } storeIcon) return cache[path] = storeIcon;
         ImageSource? result = null;
         // Ask for the big one first (for a shortcut: the program it points to, so there's no shortcut arrow)
         var source = path.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) ? ResolveShortcut(path) : path;
@@ -176,6 +179,12 @@ public static class IconHelper
         if (IsUrl(path))
         {
             try { return new Uri(path).Host.Replace("www.", ""); } catch { return path; }
+        }
+        // Store apps: the name Start shows
+        if (StoreApps.Find(path) is { } store)
+        {
+            var listed = AppCatalog.All().FirstOrDefault(a => string.Equals(a.Id, store.Aumid, StringComparison.OrdinalIgnoreCase))?.Name;
+            if (!string.IsNullOrWhiteSpace(listed)) return listed;
         }
         var trimmed = path.TrimEnd('\\', '/');
         var name = Path.GetFileNameWithoutExtension(trimmed);

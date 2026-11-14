@@ -131,10 +131,30 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Length == 2 && e.Args[0] == "--lyrics-test")
+        {
+            // Developer check (opens nothing): parsing, LRCLIB lookups, and the line for what's playing right now
+            Dispatcher.InvokeAsync(async () =>
+            {
+                string report;
+                try { report = await Lyrics.SelfTestAsync(); } catch (Exception ex) { report = "FAIL " + ex; }
+                System.IO.File.WriteAllText(e.Args[1], report);
+                Shutdown();
+            });
+            return;
+        }
+        if (e.Args.Length == 2 && e.Args[0] == "--store-test")
+        {
+            // Developer check (opens nothing): Store apps resolve to the right app id, before and after updates
+            System.IO.File.WriteAllText(e.Args[1], StoreApps.SelfTest());
+            Shutdown();
+            return;
+        }
         if (e.Args.Length == 2 && e.Args[0] == "--fullscreen-test")
         {
             // Developer check: the fullscreen rules against situations from the log, plus what they say right now
-            var report = WindowTracker.SelfTest() + $"\nnow: fullscreen={WindowTracker.ForegroundIsFullscreen()} {Log.Foreground()}\n";
+            var report = WindowTracker.SelfTest() + $"\nnow: fullscreen={WindowTracker.ForegroundIsFullscreen()} {Log.Foreground()}\n" +
+                         $"screens covered now: {WindowTracker.FullscreenMonitors().Count} of {Native.Screens().Count}\n";
             report += $"Wallpaper Engine showing a wallpaper: {WallpaperEngine.ShowingWallpaper()}\n";
             System.IO.File.WriteAllText(e.Args[1], report);
             Shutdown();
@@ -667,6 +687,17 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Length == 2 && e.Args[0] == "--lyrics-snapshot")
+        {
+            SettingsStore.Load();
+            Dispatcher.InvokeAsync(async () =>
+            {
+                try { await Snapshot.LyricsShots(e.Args[1]); }
+                catch (Exception ex) { Log.Error("lyrics snapshot", ex); }
+                Shutdown();
+            });
+            return;
+        }
         if (e.Args.Length == 2 && e.Args[0] == "--snapshot")
         {
             SettingsStore.Load();
@@ -804,6 +835,7 @@ public partial class App : Application
         Dispatcher.BeginInvoke(new Action(() =>
         {
             _ = MediaService.Instance.InitAsync();
+            Lyrics.Start();
             messages.ClipboardChanged += ClipboardHistory.OnChanged;
             ClipboardHistory.Load();
             ClipboardHistory.ImageCaptured += OnClipboardImage;
@@ -985,9 +1017,15 @@ public partial class App : Application
     void FullscreenNow()
     {
         fsCheckedAt = DateTime.Now;
-        bool fs = WindowTracker.ForegroundIsFullscreen();
-        SetNotchesFullscreen(fs);
-        SetDocksFullscreen(fs);
+        ApplyFullscreen();
+    }
+
+    /// <summary>Hide the notch and dock on each screen a game or video covers (the other screens keep theirs).</summary>
+    void ApplyFullscreen()
+    {
+        var covered = WindowTracker.FullscreenMonitors();
+        foreach (var n in AllNotches) n.SetFullscreenHidden(S.HideInFullscreen && covered.Contains(n.Monitor));
+        foreach (var d in AllDocks) d.SetFullscreen(covered.Contains(d.Monitor));
     }
 
     int winEvents, reacts;
@@ -1044,9 +1082,7 @@ public partial class App : Application
         reacts++;
         LivePolicy.ApplyToWallpaperEngine();
         CheckAppInFront();
-        bool fs = WindowTracker.ForegroundIsFullscreen();
-        SetNotchesFullscreen(fs);
-        SetDocksFullscreen(fs);
+        ApplyFullscreen();
         TaskbarManager.Enforce();
         foreach (var d in AllDocks) d.RefreshApps();
         widgets.CheckDesktop();
@@ -1058,9 +1094,7 @@ public partial class App : Application
         CountActivity();
         // Minimising the last window or clicking the desktop doesn't always send a focus-change event
         CheckAppInFront();
-        bool fs = WindowTracker.ForegroundIsFullscreen();
-        SetNotchesFullscreen(fs);
-        SetDocksFullscreen(fs);
+        ApplyFullscreen();
         TaskbarManager.Enforce();
         widgets.CheckDesktop();
         if (shellTicks % 4 == 0) TrayService.Instance?.KeepInFront(); // every 2 s is plenty
@@ -1099,14 +1133,6 @@ public partial class App : Application
         foreach (var d in DockWindow.Others) d.ApplySettings();
     }
 
-    /// <summary>Hide the dock on the screen with the fullscreen game or video (the others stay).</summary>
-    void SetDocksFullscreen(bool fs)
-    {
-        if (DockWindow.Others.Count == 0) { dock?.SetFullscreen(fs); return; }
-        var fsMonitor = fs ? Native.MonitorFromWindow(Native.GetForegroundWindow(), 2) : IntPtr.Zero;
-        foreach (var d in AllDocks) d.SetFullscreen(fs && d.Monitor == fsMonitor);
-    }
-
     // ---------- a notch on every screen ("Every screen" in Notch › Screen)
 
     /// <summary>Make sure there's a notch on each other screen when "Every screen" is on (and none when it's off).</summary>
@@ -1130,15 +1156,6 @@ public partial class App : Application
 
     System.Collections.Generic.IEnumerable<Brim.Views.NotchWindow> AllNotches =>
         notch == null ? Enumerable.Empty<Brim.Views.NotchWindow>() : Brim.Views.NotchWindow.Mirrors.Prepend(notch);
-
-    /// <summary>Hide the notch on the screen with the fullscreen game or video (the others stay).</summary>
-    void SetNotchesFullscreen(bool fs)
-    {
-        if (notch == null) return;
-        if (Brim.Views.NotchWindow.Mirrors.Count == 0) { notch.SetFullscreenHidden(fs && S.HideInFullscreen); return; }
-        var fsMonitor = fs ? Native.MonitorFromWindow(Native.GetForegroundWindow(), 2 /* nearest */) : IntPtr.Zero;
-        foreach (var n in AllNotches) n.SetFullscreenHidden(fs && S.HideInFullscreen && n.Monitor == fsMonitor);
-    }
 
     /// <summary>The notch on the screen the pointer is on (for Ctrl+Alt+N).</summary>
     Brim.Views.NotchWindow? NotchUnderPointer()

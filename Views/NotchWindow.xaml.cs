@@ -154,6 +154,11 @@ public partial class NotchWindow : Window
 
         M.Changed += OnMedia;
         M.TrackChanged += OnTrack;
+        lyricTimer.Tick += (_, _) => ShowLyric(force: false);
+        Lyrics.Changed += OnLyrics;
+        Loaded += (_, _) => OnLyrics(); // lyrics that arrived before this notch did (a screen plugged in mid-song)
+        // A long line wraps onto a second row (it grows taller); then there's no room for the next one
+        LyricNow.SizeChanged += (_, _) => LyricNext.Visibility = LyricNow.ActualHeight > 20 ? Visibility.Collapsed : Visibility.Visible;
         App.SecondTick += OnSecond;
         DeviceBattery.Changed += UpdateDeviceChips;
         Loaded += (_, _) => UpdateDeviceChips();
@@ -489,7 +494,7 @@ public partial class NotchWindow : Window
         bool island = S.Shape == NotchShape.Island;
         double h = island ? 34 : 32;
         if (HideMode) return new Size(island ? 160 : 180, 6);
-        if (SongActive) return new Size(300, h);
+        if (SongActive) return new Size(S.Lyrics && Lyrics.Lines != null ? lyricWidth : 300, h);
         if (S.Face == RestingFace.Nothing) return new Size(island ? 120 : 180, h);
         return new Size(island ? 150 : 190, h);
     }
@@ -669,7 +674,9 @@ public partial class NotchWindow : Window
 
     void OnMedia()
     {
+        Lyrics.Check(); // a new song drops the last one's lyrics before anything shows them
         UpdateClosedContent(resize: true);
+        ShowLyric(force: true);
         if (mode == Mode.Open) UpdateMusic();
         if (mode == Mode.Peek) FillPeek();              // the title or cover arrived after the pop-up opened
         else if (peekPending && S.SongPopup && mode == Mode.Closed && !string.IsNullOrWhiteSpace(M.Title)) Peek();
@@ -815,9 +822,63 @@ public partial class NotchWindow : Window
     }
 
     /// <summary>What the closed notch says while music plays: the current lyric when lyrics are on, else the title.</summary>
-    string SongFace()
+    string SongFace() => S.Lyrics && Lyrics.LineAt(M.Position) is { } line ? line : M.Title;
+
+    // ------------------------------------------------------------------ lyrics
+
+    readonly DispatcherTimer lyricTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    int shownLyric = int.MinValue;
+
+    void OnLyrics()
     {
-        return M.Title;
+        // Only tick while there's something to keep in step (a few times a second is enough)
+        if (Lyrics.Lines != null) lyricTimer.Start(); else lyricTimer.Stop();
+        // One width per song, wide enough for its longest line (not a resize with every line, which twitched)
+        lyricWidth = Lyrics.Lines == null ? 300 : Math.Clamp(Math.Ceiling((Lyrics.Lines.Max(l => TextWidth(l.Text, 12)) + ClosedChrome) / 20) * 20, 300, MaxClosedWidth);
+        UpdateClosedContent(resize: true);
+        ShowLyric(force: true);
+    }
+
+    double lyricWidth = 300;
+    const double MaxClosedWidth = 560;
+    // Around the text in the closed notch: side margins, cover, the text's own margin, the bars
+    const double ClosedChrome = 24 + 20 + 16 + 22 + 6;
+
+    double TextWidth(string text, double size, FontWeight? weight = null) =>
+        new FormattedText(text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            new Typeface(FaceText.FontFamily, FontStyles.Normal, weight ?? FontWeights.Normal, FontStretches.Normal), size, Brushes.White,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip).WidthIncludingTrailingWhitespace;
+
+    /// <summary>A lyric too long even for the widest notch gets a slightly smaller font before it's cut short.</summary>
+    double FaceSizeFor(string text) =>
+        S.Lyrics && Lyrics.Lines != null && TextWidth(text, 12) + ClosedChrome > lyricWidth ? 11 : 12;
+
+    /// <summary>Show the line being sung: in the closed notch (fading in) and under the song in the open one.</summary>
+    void ShowLyric(bool force)
+    {
+        var lines = S.Lyrics ? Lyrics.Lines : null;
+        int now = lines == null ? int.MinValue : Lyrics.IndexAt(lines, M.Position);
+        if (!force && now == shownLyric) return;
+        bool changed = now != shownLyric;
+        shownLyric = now;
+
+        if (mode == Mode.Closed && SongActive && !FocusTimer.Running)
+        {
+            var text = SongFace();
+            if (FaceText.Text != text)
+            {
+                FaceText.Text = text;
+                FaceText.FontSize = FaceSizeFor(text);
+                if (changed) FaceText.BeginAnimation(OpacityProperty, new DoubleAnimation(0.25, 1, TimeSpan.FromMilliseconds(220)));
+            }
+        }
+
+        bool show = lines != null && M.HasSession && !string.IsNullOrEmpty(M.Title);
+        LyricBlock.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (!show) return;
+        var pos = M.Position;
+        LyricNow.Text = Lyrics.LineAt(pos) ?? "♪";
+        LyricNext.Text = Lyrics.LineAt(pos, 1) ?? ""; // (before the singing starts: the first line)
     }
 
     void UpdateClosedContent(bool resize)
@@ -827,7 +888,7 @@ public partial class NotchWindow : Window
         MiniArt.Background = ArtFill();
         MiniBars.Visibility = song ? Visibility.Visible : Visibility.Collapsed;
         FaceText.Text = song && !FocusTimer.Running ? SongFace() : FaceString();
-        FaceText.FontSize = song ? 12 : 13;
+        FaceText.FontSize = song ? FaceSizeFor(FaceText.Text) : 13;
         FaceText.FontWeight = song ? FontWeights.Normal : FontWeights.SemiBold;
 
         var barBrush = BarBrush();
@@ -912,10 +973,7 @@ public partial class NotchWindow : Window
             barLevels[i] += (target - barLevels[i]) * 0.45;
             bars[i].Height = Math.Max(3, barLevels[i]);
         }
-        // Keep the lyric line in step with the song (a few times a second)
     }
-
-    int lyricTick;
 
     void RefreshOpen()
     {

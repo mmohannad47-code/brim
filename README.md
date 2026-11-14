@@ -38,7 +38,7 @@ The small pill at the top of the screen. **Point at it** (or press **Ctrl+Alt+N*
 
 | Tab | What it does |
 |---|---|
-| **Home** | What's playing (Spotify, YouTube, any app with media controls) with cover art, a seek bar and controls, plus the date, CPU, memory, connected devices' batteries and volume. |
+| **Home** | What's playing (Spotify, YouTube, any app with media controls) with cover art, a seek bar, controls and synced lyrics, plus the date, CPU, memory, connected devices' batteries and volume. |
 | **Shortcuts** | Up to 12 apps, folders or websites. Drag an app onto the notch to add it; right-click to remove. The first 9 open with **Ctrl+Alt+1…9**. |
 | **Games** | Every game you have installed, with cover art: Steam, Epic, GOG, Riot, EA, Ubisoft, Battle.net, Xbox, and game folders on any drive. New installs appear by themselves. Right-click a game to launch with DirectX/Vulkan, pick a different exe, change the cover or uninstall it. |
 | **Messages** | Notifications from Discord, Teams, Outlook, WhatsApp and other chat and mail apps. Click one to open it; right-click to mute a person or app. Turn on **Settings › Messages › Only pop up in the notch** to stop Windows' own corner pop-up for those apps. |
@@ -48,7 +48,7 @@ The small pill at the top of the screen. **Point at it** (or press **Ctrl+Alt+N*
 | **Controls** | Wi-Fi, Bluetooth, mic, volume, output device and brightness. |
 | **Timer** | A focus timer; the notch counts down and pops out when time's up. |
 
-Choose which tabs to show, and their order, in **Settings › Notch**. The notch can sit at the left, centre or right, look like a notch or a floating island, and hides itself in fullscreen games and videos. With more than one monitor, **Settings › Notch › Screen › Every screen** puts a notch on each of them.
+Choose which tabs to show, and their order, in **Settings › Notch**. The notch can sit at the left, centre or right, look like a notch or a floating island, and hides itself in fullscreen games and videos (only on the screen the game covers). While music plays, the closed notch shows the line being sung (turn off in **Settings › Notch › Lyrics**). With more than one monitor, **Settings › Notch › Screen › Every screen** puts a notch on each of them.
 
 It also pops out briefly for song changes, new messages, muting or unmuting your sound or mic, charging and headphones connecting.
 
@@ -56,7 +56,7 @@ It also pops out briefly for song changes, new messages, muting or unmuting your
 
 **Settings › Taskbar** › choose **Brim dock**. You get a rounded bar with Start, your pinned and open apps, the tray, quick settings and the clock.
 
-- Click an app to switch to it, again to minimise. Middle-click for a new window. Right-click to pin, close or **End task** (stops an app that's stuck).
+- Click an app to switch to it, again to minimise. Middle-click for a new window. Right-click to pin, close or **End task** (stops an app that's stuck). Microsoft Store apps (Spotify, Calculator…) pin and open like any other.
 - Point at an app to see live previews of its windows, each shaped like its window (tall ones like a friends list too).
 - **Red badge:** the app has notifications or unread messages. **Blue arrow badge:** it's downloading something.
 - **⌃** opens the tray icons. The status icons open quick settings. The far-right strip is *show desktop*.

@@ -15,6 +15,30 @@ namespace Brim.Core;
 /// </summary>
 public static class Snapshot
 {
+    /// <summary>`--lyrics-snapshot dir`: the closed and open notch with a song's lyrics (a pretend song; nothing plays).</summary>
+    public static async Task LyricsShots(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        SettingsStore.ReadOnly = true;
+        ThemeManager.Apply();
+        var at = TimeSpan.FromSeconds(62);
+        MediaService.Instance.DebugFake("Bohemian Rhapsody - Remastered 2011", "Queen", TimeSpan.FromSeconds(355), at);
+        var lines = await Lyrics.FindAsync("Bohemian Rhapsody - Remastered 2011", "Queen", TimeSpan.FromSeconds(355));
+        Lyrics.DebugSet(lines);
+        var notch = new NotchWindow();
+        notch.Show();
+        await Task.Delay(300);
+        notch.Left = -4000;
+        await Task.Delay(800);
+        Save(notch, Path.Combine(folder, "lyrics-closed.png"));
+        notch.DebugOpen("Home");
+        await Task.Delay(900);
+        Save(notch, Path.Combine(folder, "lyrics-open.png"));
+        File.WriteAllText(Path.Combine(folder, "lyrics.txt"),
+            $"{lines?.Count ?? 0} lines; at {MediaService.Fmt(MediaService.Instance.Position)}: \"{Lyrics.LineAt(MediaService.Instance.Position)}\" then \"{Lyrics.LineAt(MediaService.Instance.Position, 1)}\"");
+        notch.Close();
+    }
+
     public static async Task Run(string folder)
     {
         Directory.CreateDirectory(folder);

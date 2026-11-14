@@ -143,6 +143,8 @@ public sealed class SettingsWindow : Window
                 Switch(S.LiveActivities, v => { S.LiveActivities = v; Commit(); })),
             ScreenRow("Screen", S.NotchScreen, v => { S.NotchScreen = v; Commit(); }, everyScreen: true),
             Row("Song in the closed notch", "Cover, title and live bars while music plays", Switch(S.ShowSongWhenClosed, v => { S.ShowSongWhenClosed = v; Commit(); })),
+            Row("Lyrics", "The line being sung, in the closed notch and under the song, for songs with synced lyrics (from LRCLIB)",
+                Switch(S.Lyrics, v => { S.Lyrics = v; Commit(); Lyrics.Check(); })),
             Row("Pop out on new song", "Shows the next track for a few seconds", Switch(S.SongPopup, v => { S.SongPopup = v; Commit(); }))
         );
 

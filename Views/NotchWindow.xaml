@@ -135,6 +135,12 @@
                                             <TextBlock x:Name="SongArtist" Grid.Row="1" FontSize="13" Foreground="{DynamicResource Brim.Dim}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"
                                                        Text="Play something in Spotify, a browser or any player"/>
                                             <TextBlock x:Name="SongSource" Grid.Row="2" FontSize="11" Foreground="{DynamicResource Brim.Dim}" Opacity="0.7" Margin="0,2,0,0"/>
+                                            <!-- Lyrics: the line being sung, and the next one -->
+                                            <StackPanel x:Name="LyricBlock" Grid.Row="3" VerticalAlignment="Center" Visibility="Collapsed" Margin="0,4,0,4">
+                                                <TextBlock x:Name="LyricNow" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                                           LineHeight="17" LineStackingStrategy="BlockLineHeight" MaxHeight="34"/>
+                                                <TextBlock x:Name="LyricNext" FontSize="12" Foreground="{DynamicResource Brim.Dim}" Opacity="0.75" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                            </StackPanel>
                                             <StackPanel x:Name="RecentGames" Grid.Row="3" Grid.RowSpan="2" VerticalAlignment="Bottom" Visibility="Collapsed" Margin="0,0,0,2">
                                                 <TextBlock Text="Jump back in" FontSize="11" Foreground="{DynamicResource Brim.Dim}" Margin="0,0,0,5"/>
                                                 <StackPanel x:Name="RecentGamesList" Orientation="Horizontal"/>

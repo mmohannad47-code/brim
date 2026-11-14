@@ -478,10 +478,25 @@ public partial class DockWindow : Window
     /// </summary>
     static string KeyFor(string? path)
     {
+        // Store apps: by app id, so the running window, a pin of its exe and a pin from the Start list all match
+        // (and keep matching after the app updates into a new package folder)
+        if (StoreApps.Find(path) is { } store) return store.Key;
         var p = (path ?? "").ToLowerInvariant();
         p = System.Text.RegularExpressions.Regex.Replace(p, @"\\app-\d+(\.\d+)+\\", "\\");
         p = System.Text.RegularExpressions.Regex.Replace(p, @"\\\d+(\.\d+){1,3}\\", "\\");
         return p;
+    }
+
+    static readonly Dictionary<IntPtr, string?> hostedIds = new();
+
+    /// <summary>The app id of a Store app window drawn by ApplicationFrameHost (cached; it never changes).</summary>
+    static string? HostedAumid(IntPtr hwnd)
+    {
+        if (hostedIds.TryGetValue(hwnd, out var id)) return id;
+        id = StoreApps.AumidOfWindow(hwnd);
+        // The frame shows before the app inside it says who it is: only remember a real answer
+        if (id != null) { if (hostedIds.Count > 200) hostedIds.Clear(); hostedIds[hwnd] = id; }
+        return id;
     }
 
     static readonly System.Text.RegularExpressions.Regex HelperExe =
@@ -568,7 +583,9 @@ public partial class DockWindow : Window
                 // The app updated: the running copy, or the newest version folder
                 var running = groups.FirstOrDefault(g => g.key == KeyFor(pin.Path)).wins?.FirstOrDefault()?.ExePath;
                 if (running != null && HelperExe.IsMatch(running) == false && !string.Equals(running, pin.Path, StringComparison.OrdinalIgnoreCase)) better = running;
-                else if (!System.IO.File.Exists(pin.Path)) better = NewestVersionOf(pin.Path);
+                else if (!System.IO.File.Exists(pin.Path))
+                    // Store apps: wherever the package lives now (WindowsApps can't be listed to look for it)
+                    better = StoreApps.Find(pin.Path, fresh: true)?.Exe ?? NewestVersionOf(pin.Path);
             }
             if (better == null || string.Equals(better, pin.Path, StringComparison.OrdinalIgnoreCase)) continue;
             Log.Note("dock", $"pin '{pin.Name}' now points at {better}");
@@ -606,8 +623,10 @@ public partial class DockWindow : Window
         foreach (var w in windows)
         {
             bool hosted = w.ExePath != null && w.ExePath.EndsWith("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase);
+            // Store apps drawn by ApplicationFrameHost (Calculator, Photos…) say which app they are on the window
+            if (hosted && HostedAumid(w.Hwnd) is { } aumid) { w.ExePath = "shell:AppsFolder\\" + aumid; hosted = false; }
             // Windows drawn by a helper process count as the app it belongs to (Steam, not steamwebhelper)
-            if (!hosted && w.ExePath != null) w.ExePath = OwningApp(w.ExePath, w.Pid);
+            else if (!hosted && w.ExePath != null) w.ExePath = OwningApp(w.ExePath, w.Pid);
             string key = hosted || w.ExePath == null ? "hwnd:" + w.Hwnd : KeyFor(w.ExePath);
             var g = groups.FirstOrDefault(x => x.key == key);
             if (g.wins == null) groups.Add((key, new List<AppWindow> { w }));
@@ -913,14 +932,16 @@ public partial class DockWindow : Window
         // Store apps live inside a Windows host window: the real app is the one drawing inside it
         int RealPid(AppWindow w)
         {
-            if (!string.Equals(System.IO.Path.GetFileName(w.ExePath ?? ""), "ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase)) return (int)w.Pid;
+            // (the window's own process, not ExePath: the dock names hosted windows by their app id)
+            if (!string.Equals(System.IO.Path.GetFileName(Native.ProcessPath(w.Pid) ?? ""), "ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase)) return (int)w.Pid;
             var inner = Native.FindWindowEx(w.Hwnd, IntPtr.Zero, "Windows.UI.Core.CoreWindow", null);
             if (inner == IntPtr.Zero) return 0;
             Native.GetWindowThreadProcessId(inner, out uint p);
             return (int)p;
         }
         // A window drawn by a helper (Steam's): the app itself too, or it would just start the helper again
-        var owners = app.Windows.Where(w => w.ExePath != null && !string.Equals(Native.ProcessPath(w.Pid), w.ExePath, StringComparison.OrdinalIgnoreCase))
+        var owners = app.Windows.Where(w => w.ExePath != null && !w.ExePath.StartsWith("shell:", StringComparison.OrdinalIgnoreCase) &&
+                                            !string.Equals(Native.ProcessPath(w.Pid), w.ExePath, StringComparison.OrdinalIgnoreCase))
             .Select(w => w.ExePath!).Distinct(StringComparer.OrdinalIgnoreCase)
             .SelectMany(path => System.Diagnostics.Process.GetProcessesByName(System.IO.Path.GetFileNameWithoutExtension(path))
                 .Where(p => string.Equals(Native.ProcessPath((uint)p.Id), path, StringComparison.OrdinalIgnoreCase)).Select(p => p.Id))

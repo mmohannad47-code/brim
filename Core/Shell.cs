@@ -366,6 +366,47 @@ public static class WindowTracker
         }
     }
 
+    /// <summary>
+    /// The screens a game or fullscreen video covers right now, each judged by what's on top of it, not by which
+    /// window has focus: clicking the desktop on another screen leaves the game's screen covered (the notch and dock
+    /// there stay hidden). The screen you opened Start or the desktop on is never counted.
+    /// </summary>
+    public static HashSet<IntPtr> FullscreenMonitors()
+    {
+        var covered = new HashSet<IntPtr>();
+        var decided = new HashSet<IntPtr>();
+        var fg = Native.GetForegroundWindow();
+        if (fg != IntPtr.Zero && KindOf(fg) is FocusKind.Desktop or FocusKind.Shell)
+        {
+            // Start/Search/taskbar open on the game's screen: let the dock show there. The desktop window spans every
+            // screen, so it only says which screen you clicked by where the pointer is
+            Native.GetCursorPos(out var pt);
+            decided.Add(KindOf(fg) == FocusKind.Desktop ? Native.MonitorFromPoint(pt, 2) : Native.MonitorFromWindow(fg, 2));
+        }
+        Native.EnumWindows((h, _) =>
+        {
+            // Top to bottom: the first ordinary window on each screen decides it
+            if (!Native.IsWindowVisible(h) || Native.IsIconic(h)) return true;
+            if (Native.DwmGetWindowAttribute(h, 14 /* CLOAKED */, out int cloaked, 4) == 0 && cloaked != 0) return true;
+            if (KindOf(h) != FocusKind.App) return true;
+            var mon = Native.MonitorFromWindow(h, 2);
+            if (decided.Contains(mon)) return true;
+            var mi = new Native.MONITORINFO { cbSize = Marshal.SizeOf<Native.MONITORINFO>() };
+            Native.GetMonitorInfo(mon, ref mi);
+            Native.GetWindowRect(h, out var r);
+            if (CoversScreen(Native.IsZoomed(h), Native.GetWindowLongPtr(h, -16).ToInt64(), true, r, mi.rcMonitor))
+            {
+                covered.Add(mon);
+                decided.Add(mon);
+            }
+            // A small always-on-top window (picture-in-picture, a sticky note) over a game doesn't uncover it;
+            // an ordinary window on top means the screen isn't fullscreen
+            else if ((Native.GetWindowLongPtr(h, Native.GWL_EXSTYLE).ToInt64() & 0x8 /* WS_EX_TOPMOST */) == 0) decided.Add(mon);
+            return true;
+        }, IntPtr.Zero);
+        return covered;
+    }
+
     /// <summary>`Brim.exe --fullscreen-test out.txt`: the rules against situations seen in the log.</summary>
     public static string SelfTest()
     {
@@ -405,16 +446,32 @@ public static class Launcher
 {
     public static void Open(string path, string? args = null)
     {
+        // Store apps (an exe inside WindowsApps, or "shell:AppsFolder\<app id>") start by their app id:
+        // Windows refuses to run their files directly, and their folder moves with every update
+        if (StoreApps.Find(path) is { } store) { StoreApps.Launch(store.Aumid, args); return; }
         try
         {
-            // Store apps saved as "shell:AppsFolder\<app id>" start through Explorer
             var psi = path.StartsWith("shell:", StringComparison.OrdinalIgnoreCase)
                 ? new ProcessStartInfo("explorer.exe", path) { UseShellExecute = true }
                 : new ProcessStartInfo(path) { UseShellExecute = true };
-            if (!string.IsNullOrWhiteSpace(args)) psi.Arguments = args;
+            if (!string.IsNullOrWhiteSpace(args) && !path.StartsWith("shell:", StringComparison.OrdinalIgnoreCase)) psi.Arguments = args;
             Process.Start(psi);
         }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 5 && RunningAumid(path) is { } aumid)
+        {
+            // A packaged app installed somewhere else: start it the way Windows does, by the id its running copy has
+            Log.Note("launch", $"{path} can't be started directly; using its app id {aumid}");
+            StoreApps.Launch(aumid, args);
+        }
         catch (Exception ex) { Log.Error("launch " + path, ex); }
+    }
+
+    static string? RunningAumid(string exe)
+    {
+        foreach (var p in Process.GetProcessesByName(System.IO.Path.GetFileNameWithoutExtension(exe)))
+            if (string.Equals(Native.ProcessPath((uint)p.Id), exe, StringComparison.OrdinalIgnoreCase) && StoreApps.AumidOfProcess((uint)p.Id) is { } id)
+                return id;
+        return null;
     }
 
     public static void ShowInFolder(string path)

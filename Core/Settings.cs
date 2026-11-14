@@ -111,6 +111,8 @@ public class AppSettings
     public RestingFace Face { get; set; } = RestingFace.Clock;
     public bool ShowSongWhenClosed { get; set; } = true;
     public bool SongPopup { get; set; } = true;
+    /// <summary>Synced lyrics (LRCLIB) in the closed notch and the player</summary>
+    public bool Lyrics { get; set; } = true;
     /// <summary>Pop the notch out for volume, charging, headphones, mic and timer changes</summary>
     public bool LiveActivities { get; set; } = true;
     public bool HideUntilHover { get; set; }

@@ -16,7 +16,17 @@ public sealed class MediaService
     public event Action? Changed;
     public event Action? TrackChanged;
 
-    public bool HasSession => session != null;
+    public bool HasSession => session != null || fake;
+    bool fake;
+
+    /// <summary>For snapshots: pretend a song is playing (no player needed).</summary>
+    internal void DebugFake(string title, string artist, TimeSpan duration, TimeSpan at)
+    {
+        fake = true;
+        Title = title; Artist = artist; Source = "Spotify"; IsPlaying = true; Duration = duration;
+        position = at; positionStamp = DateTimeOffset.Now;
+        Changed?.Invoke();
+    }
     public bool IsPlaying { get; private set; }
     public string Title { get; private set; } = "";
     public string Artist { get; private set; } = "";
@@ -26,11 +36,25 @@ public sealed class MediaService
     public TimeSpan Duration { get; private set; }
     public bool CanSeek { get; private set; }
 
-    TimeSpan position;
-    DateTimeOffset positionStamp;
+    TimeSpan position, rawPosition = TimeSpan.MinValue;
+    DateTimeOffset positionStamp, rawStamp;
     GlobalSystemMediaTransportControlsSessionManager? manager;
     GlobalSystemMediaTransportControlsSession? session;
     string lastTrackKey = "";
+
+    /// <summary>For dev checks: what the player last reported (position, and how long ago it said so).</summary>
+    public string RawTimeline
+    {
+        get
+        {
+            try
+            {
+                var t = session?.GetTimelineProperties();
+                return t == null ? "no timeline" : $"player said {Fmt(t.Position)} {(DateTimeOffset.Now - t.LastUpdatedTime).TotalSeconds:0.0}s ago";
+            }
+            catch { return "?"; }
+        }
+    }
 
     public TimeSpan Position
     {
@@ -91,6 +115,7 @@ public sealed class MediaService
             session.TimelinePropertiesChanged -= OnTimeline;
         }
         session = s;
+        rawPosition = TimeSpan.MinValue; // a new player: take its first report as new
         if (session == null)
         {
             Title = Artist = Source = "";
@@ -139,10 +164,19 @@ public sealed class MediaService
             var t = session?.GetTimelineProperties();
             if (t == null) return;
             Duration = t.EndTime - t.StartTime;
+            // Players report where they are only now and then (Spotify: on play, pause and seek), with the moment
+            // they said it. Reading the same report again must not restart the count from it (lyrics fell behind).
+            if (t.Position == rawPosition && t.LastUpdatedTime == rawStamp) return;
+            rawPosition = t.Position;
+            rawStamp = t.LastUpdatedTime;
+            var now = DateTimeOffset.Now;
             position = t.Position;
-            positionStamp = t.LastUpdatedTime == default ? DateTimeOffset.Now : t.LastUpdatedTime;
-            // Some apps send stale stamps; never extrapolate further than a few seconds into the past
-            if (DateTimeOffset.Now - positionStamp > TimeSpan.FromSeconds(30)) positionStamp = DateTimeOffset.Now;
+            positionStamp = t.LastUpdatedTime == default ? now : t.LastUpdatedTime;
+            // Count on from that moment, unless it's in the future or would run past the end of the song (a stamp
+            // the app never updates); without a length, no further than 30 s
+            var age = now - positionStamp;
+            if (age < TimeSpan.Zero || (Duration > TimeSpan.Zero ? t.Position + age > Duration : age > TimeSpan.FromSeconds(30)))
+                positionStamp = now;
         }
         catch (Exception ex) { Log.Error("media timeline", ex); }
     }
