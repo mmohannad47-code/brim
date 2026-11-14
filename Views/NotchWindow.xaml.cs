@@ -65,6 +65,17 @@ public partial class NotchWindow : Window
 
     double SpeedMs => S.Speed switch { "Quick" => 220, "Relaxed" => 560, _ => 380 };
 
+    /// <summary>Notches on the other screens ("Every screen"): they show what the main one shows.</summary>
+    public static readonly List<NotchWindow> Mirrors = new();
+    /// <summary>The screen this notch sits on when it isn't the main one (null: the one picked in settings).</summary>
+    readonly string? screenDevice;
+    public bool IsMirror => screenDevice != null;
+    public IntPtr Monitor => Native.ScreenOrPrimary(screenDevice ?? (S.NotchScreen == "*" ? "" : S.NotchScreen)).Handle;
+    public string? ScreenDevice => screenDevice;
+
+    /// <summary>A notch for another screen (copies the main one's pop-ups instead of watching the system itself).</summary>
+    public NotchWindow(string device) : this() { screenDevice = device; watch.Stop(); }
+
     public NotchWindow()
     {
         InitializeComponent();
@@ -100,11 +111,13 @@ public partial class NotchWindow : Window
         watch.Tick += (_, _) => WatchSystem();
         watch.Start();
         FocusTimer.Changed += () => { if (mode == Mode.Closed) UpdateClosedContent(resize: false); };
-        FocusTimer.Finished += () => ShowActivity("", "Time's up", "Focus done", null, 6);
+        FocusTimer.Finished += () => { if (!IsMirror) ShowActivity("", "Time's up", "Focus done", null, 6); };
 
         Body.MouseEnter += (_, _) =>
         {
             leaveTimer.Stop();
+            // A pop-up you can click (a stream went live, an update): stay put so the click lands on it
+            if (mode == Mode.Activity && activityClick != null) { activityTimer.Stop(); return; }
             if (mode != Mode.Open && !fullscreenHidden)
             {
                 hoverTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(1, S.HoverDelayMs));
@@ -115,8 +128,20 @@ public partial class NotchWindow : Window
         {
             hoverTimer.Stop();
             if (mode == Mode.Open && holdOpen == 0) leaveTimer.Start();
+            if (mode == Mode.Activity && activityClick != null) { activityTimer.Interval = TimeSpan.FromSeconds(2); activityTimer.Start(); }
         };
-        Body.MouseLeftButtonUp += (_, _) => { if (mode != Mode.Open) Open(); };
+        Body.MouseLeftButtonUp += (_, _) =>
+        {
+            if (mode == Mode.Activity && activityClick is { } act)
+            {
+                activityClick = null;
+                activityTimer.Stop();
+                Collapse();
+                try { act(); } catch (Exception ex) { Log.Error("pop-up click", ex); }
+                return;
+            }
+            if (mode != Mode.Open) Open();
+        };
         Body.DragEnter += Body_DragEnter;
         Body.DragOver += (_, e) =>
         {
@@ -179,7 +204,8 @@ public partial class NotchWindow : Window
 
     public void ApplySettings()
     {
-        var screen = Native.ScreenDip(S.NotchScreen);
+        foreach (var m in MirrorsOf()) m.ApplySettings();
+        var screen = Native.ScreenDip(screenDevice ?? (S.NotchScreen == "*" ? "" : S.NotchScreen));
         // Left / Center / Right along the top edge. The window is wider than the open card, so the card is
         // pinned to the window's matching side and the window to the screen's (with a small gap from the corner).
         const double gap = 18;
@@ -297,8 +323,11 @@ public partial class NotchWindow : Window
             (int)Math.Round(Radius * scale), S.Shape == NotchShape.Notch);
     }
 
+    IEnumerable<NotchWindow> MirrorsOf() => IsMirror ? Enumerable.Empty<NotchWindow>() : Mirrors.ToList();
+
     public void EnsureTopmost()
     {
+        foreach (var m in MirrorsOf()) m.EnsureTopmost();
         // While a right-click menu, dialog or drag is up, raising the notch would push it back over the menu
         if (holdOpen > 0 || HoverTip.IsShowing || mode == Mode.Open && AnyPopupOpen()) return;
         if (hwnd != IntPtr.Zero && IsVisible)
@@ -447,6 +476,7 @@ public partial class NotchWindow : Window
     /// <summary>Called when focus moves: shows the notch on the desktop, tucks it away over apps.</summary>
     public void SetAppInFront(bool app)
     {
+        foreach (var m in MirrorsOf()) m.SetAppInFront(app);
         if (app == appInFront) return;
         appInFront = app;
         Log.Note("notch", (app ? "tucked away: app in front " : "back: desktop in front ") + Log.Foreground());
@@ -664,20 +694,47 @@ public partial class NotchWindow : Window
     /// <summary>A new message: who wrote and from where, for a few seconds. Says what happened (for the log).</summary>
     public string ShowMessage(string who, string where, ImageSource? icon)
     {
+        foreach (var m in MirrorsOf()) m.ShowMessage(who, where, icon);
         if (fullscreenHidden) return "not shown: something is fullscreen";
         if (mode == Mode.Open)
         {
             Note($"{who} · {where}"); // already open: say it in the header instead
             return "shown in the open notch's header";
         }
-        ShowActivity("", who, where, null, 5);
+        ActivityCore("", who, where, null, 5);
         return IsVisible ? $"shown (notch at {Left:0},{Top:0}, mode {mode})" : "not shown: notch window hidden";
+    }
+
+    Action? activityClick;
+
+    /// <summary>For `--mirror-test`.</summary>
+    internal string DebugState => $"mode {mode}, clickable {activityClick != null}, watching the system {watch.IsEnabled}, title '{ActTitle.Text}'";
+
+    /// <summary>
+    /// A pop-up that does something when clicked (open a stream, install an update). Says what happened (for the log).
+    /// </summary>
+    public string ShowAction(string glyph, string title, string value, Action onClick, double seconds = 7)
+    {
+        foreach (var m in MirrorsOf()) m.ShowAction(glyph, title, value, onClick, seconds);
+        if (fullscreenHidden) return "not shown: something is fullscreen";
+        if (mode == Mode.Open) { Note($"{title} · {value}"); return "shown in the open notch's header"; }
+        ActivityCore(glyph, title, value, null, seconds);
+        activityClick = onClick;
+        return "shown";
     }
 
     /// <summary>Pop the notch out briefly with a glyph, a title and an optional level bar.</summary>
     public void ShowActivity(string glyph, string title, string value = "", double? level = null, double seconds = 1.8, Brush? glyphBrush = null, bool symbolFont = false)
     {
+        foreach (var m in MirrorsOf()) m.ActivityCore(glyph, title, value, level, seconds, glyphBrush, symbolFont);
+        ActivityCore(glyph, title, value, level, seconds, glyphBrush, symbolFont);
+    }
+
+    /// <summary>Draw the pop-up on this notch only.</summary>
+    void ActivityCore(string glyph, string title, string value = "", double? level = null, double seconds = 1.8, Brush? glyphBrush = null, bool symbolFont = false)
+    {
         if (fullscreenHidden || mode == Mode.Open) return;
+        activityClick = null; // a new pop-up replaces what a clickable one would have done
         ActGlyph.Text = glyph;
         ActGlyph.FontFamily = (FontFamily)FindResource(symbolFont ? "Brim.Symbols" : "Brim.Icons");
         if (glyphBrush != null) ActGlyph.Foreground = glyphBrush;
@@ -715,8 +772,9 @@ public partial class NotchWindow : Window
         string? output = watchTicks++ % 10 == 0 ? Audio.DefaultOutputName() : lastOutput;
         if (watchPrimed)
         {
-            if (Math.Abs(vol - lastVolume) > 0.004 || muted != lastMuted)
-                ShowActivity(muted || vol < 0.005 ? "" : "", muted ? "Muted" : "Volume", muted ? "" : $"{Math.Round(vol * 100)}", muted ? 0 : vol * 100);
+            // Only muting and unmuting pop the notch out (changing the volume level doesn't)
+            if (muted != lastMuted)
+                ShowActivity(muted || vol < 0.005 ? "" : "", muted ? "Muted" : "Unmuted", muted ? "" : $"{Math.Round(vol * 100)}", muted ? 0 : vol * 100);
             else if (SystemInfo.HasBattery && charging != lastCharging)
                 ShowActivity(charging ? "⚡" : "▯", charging ? "Charging" : "On battery", $"{SystemInfo.BatteryPercent}%", SystemInfo.BatteryPercent, 2.4, null, true);
             else if (output != null && lastOutput != null && output != lastOutput)
@@ -731,8 +789,9 @@ public partial class NotchWindow : Window
 
     public void ShowMicActivity(bool muted)
     {
+        foreach (var m in MirrorsOf()) m.ShowMicActivity(muted);
         lastMic = muted;
-        ShowActivity(muted ? "" : "", muted ? "Microphone muted" : "Microphone on", "", null, 2,
+        ActivityCore(muted ? "" : "", muted ? "Microphone muted" : "Microphone on", "", null, 2,
             muted ? new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B)) : null);
     }
 

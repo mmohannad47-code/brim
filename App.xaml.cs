@@ -335,6 +335,53 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test")
+        {
+            // Developer checks for the newer features; each writes what happened to the file given
+            Dispatcher.InvokeAsync(async () =>
+            {
+                SettingsStore.ReadOnly = true;
+                var sb = new System.Text.StringBuilder();
+                try
+                {
+                    switch (e.Args[0])
+                    {
+                        case "--update-test":
+                            Updater.PretendVersion = "0.0.1";
+                            await Updater.Check();
+                            sb.AppendLine($"state {Updater.Now}, new version {Updater.NewVersion}, problem {Updater.Problem}");
+                            if (Updater.ReadyFile is { } f && System.IO.File.Exists(f))
+                            {
+                                using var s = System.IO.File.OpenRead(f);
+                                var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(s));
+                                sb.AppendLine($"file {System.IO.Path.GetFileName(f)} {new System.IO.FileInfo(f).Length} bytes, matches release checksum: {hash.Equals(Updater.ExpectedHash, StringComparison.OrdinalIgnoreCase)}");
+                            }
+                            break;
+                        case "--mirror-test":
+                            ThemeManager.Apply();
+                            var main = new Brim.Views.NotchWindow { Left = -4000 };
+                            main.Show();
+                            var copy = new Brim.Views.NotchWindow(Native.Screens()[0].Device);
+                            Brim.Views.NotchWindow.Mirrors.Add(copy);
+                            copy.Show();
+                            await System.Threading.Tasks.Task.Delay(800);
+                            main.ShowAction("", "Someone is live", "Just Chatting", () => { }, 5);
+                            await System.Threading.Tasks.Task.Delay(600);
+                            sb.AppendLine("main:  " + main.DebugState);
+                            sb.AppendLine("other: " + copy.DebugState);
+                            main.ShowActivity("", "Muted", "", 0, 2);
+                            await System.Threading.Tasks.Task.Delay(300);
+                            sb.AppendLine("after a mute pop-up, other: " + copy.DebugState);
+                            break;
+                    }
+                }
+                catch (Exception ex) { sb.AppendLine("FAIL " + ex); }
+                System.IO.File.WriteAllText(e.Args[1], sb.ToString());
+                Shutdown();
+            });
+            return;
+        }
+
         if (e.Args.Length == 2 && e.Args[0] == "--keys-test")
         {
             // Developer check: with factory settings (no keys of your own), do the built-in keys work?
@@ -582,9 +629,15 @@ public partial class App : Application
         }
 
         // Started from a download (not the installed copy): offer to install, or update the installed one
-        // ("Brim-Setup.exe --install" installs or updates without asking)
-        bool quietInstall = e.Args.Length == 1 && e.Args[0] == "--install";
-        if ((e.Args.Length == 0 || quietInstall) && !Installer.RunningInstalled && !Installer.IsDevCopy)
+        // ("Brim-Setup.exe --install" installs or updates without asking; "--after <pid>" first waits for that Brim
+        // to close, which is how a running Brim hands over to its update)
+        bool quietInstall = e.Args.Length >= 1 && e.Args[0] == "--install";
+        if (quietInstall && e.Args.Length == 3 && e.Args[1] == "--after" && int.TryParse(e.Args[2], out int waitPid))
+        {
+            try { using var old = System.Diagnostics.Process.GetProcessById(waitPid); old.WaitForExit(30000); }
+            catch { } // already gone
+        }
+        if ((e.Args.Length == 0 || quietInstall) && !Installer.RunningInstalled && (!Installer.IsDevCopy || quietInstall))
         {
             bool update = Installer.IsInstalled;
             var answer = quietInstall ? MessageBoxResult.Yes : MessageBox.Show(update
@@ -702,6 +755,10 @@ public partial class App : Application
             };
             MessageCenter.Sync();
             Downloads.Start(); // the dock's download badge
+            Updater.Ready += () =>
+                Log.Note("update", "pop-up: " + (notch?.ShowAction("", $"Brim {Updater.NewVersion} is ready", "Click to restart and update",
+                    InstallUpdate, 10) ?? "no notch"));
+            Updater.Start();
             // A Wallpaper Engine video Brim used to play itself: hand it to Wallpaper Engine (it plays its own better)
             if (S.LiveWallpaper != null && WallpaperEngine.Installed &&
                 WallpaperEngine.Items().FirstOrDefault(i => string.Equals(i.File, S.LiveWallpaper, StringComparison.OrdinalIgnoreCase)) is { } weVideo)
@@ -754,6 +811,7 @@ public partial class App : Application
         try
         {
             ThemeManager.Apply();
+            SyncNotches();
             notch?.ApplySettings();
 
             TaskbarManager.Apply(S.Taskbar);
@@ -859,7 +917,7 @@ public partial class App : Application
     {
         fsCheckedAt = DateTime.Now;
         bool fs = WindowTracker.ForegroundIsFullscreen();
-        notch?.SetFullscreenHidden(fs && S.HideInFullscreen);
+        SetNotchesFullscreen(fs);
         dock?.SetFullscreen(fs);
     }
 
@@ -918,7 +976,7 @@ public partial class App : Application
         LivePolicy.ApplyToWallpaperEngine();
         CheckAppInFront();
         bool fs = WindowTracker.ForegroundIsFullscreen();
-        notch?.SetFullscreenHidden(fs && S.HideInFullscreen);
+        SetNotchesFullscreen(fs);
         dock?.SetFullscreen(fs);
         TaskbarManager.Enforce();
         dock?.RefreshApps();
@@ -932,7 +990,7 @@ public partial class App : Application
         // Minimising the last window or clicking the desktop doesn't always send a focus-change event
         CheckAppInFront();
         bool fs = WindowTracker.ForegroundIsFullscreen();
-        notch?.SetFullscreenHidden(fs && S.HideInFullscreen);
+        SetNotchesFullscreen(fs);
         dock?.SetFullscreen(fs);
         TaskbarManager.Enforce();
         widgets.CheckDesktop();
@@ -944,8 +1002,51 @@ public partial class App : Application
             notch?.EnsureTopmost();
             dock?.EnsureTopmost();
             dock?.CheckReservation(); // "keep windows above the dock" holds even if Explorer drops the strip
+            if (S.NotchScreen == "*") SyncNotches(); // a screen plugged in or out
             if (S.HideDesktopIcons) DesktopIcons.Set(false);
         }
+    }
+
+    // ---------- a notch on every screen ("Every screen" in Notch › Screen)
+
+    /// <summary>Make sure there's a notch on each other screen when "Every screen" is on (and none when it's off).</summary>
+    void SyncNotches()
+    {
+        if (notch == null) return;
+        var others = S.NotchScreen == "*" ? Native.Screens().Where(s => !s.Primary).Select(s => s.Device).ToList() : new System.Collections.Generic.List<string>();
+        foreach (var m in Brim.Views.NotchWindow.Mirrors.Where(m => !others.Contains(m.ScreenDevice!, StringComparer.OrdinalIgnoreCase)).ToList())
+        {
+            Brim.Views.NotchWindow.Mirrors.Remove(m);
+            m.Close();
+        }
+        foreach (var device in others.Where(d => !Brim.Views.NotchWindow.Mirrors.Any(m => string.Equals(m.ScreenDevice, d, StringComparison.OrdinalIgnoreCase))))
+        {
+            var m = new Brim.Views.NotchWindow(device);
+            Brim.Views.NotchWindow.Mirrors.Add(m);
+            m.Show();
+            Log.Note("notch", $"added a notch on {device}");
+        }
+    }
+
+    System.Collections.Generic.IEnumerable<Brim.Views.NotchWindow> AllNotches =>
+        notch == null ? Enumerable.Empty<Brim.Views.NotchWindow>() : Brim.Views.NotchWindow.Mirrors.Prepend(notch);
+
+    /// <summary>Hide the notch on the screen with the fullscreen game or video (the others stay).</summary>
+    void SetNotchesFullscreen(bool fs)
+    {
+        if (notch == null) return;
+        if (Brim.Views.NotchWindow.Mirrors.Count == 0) { notch.SetFullscreenHidden(fs && S.HideInFullscreen); return; }
+        var fsMonitor = fs ? Native.MonitorFromWindow(Native.GetForegroundWindow(), 2 /* nearest */) : IntPtr.Zero;
+        foreach (var n in AllNotches) n.SetFullscreenHidden(fs && S.HideInFullscreen && n.Monitor == fsMonitor);
+    }
+
+    /// <summary>The notch on the screen the pointer is on (for Ctrl+Alt+N).</summary>
+    Brim.Views.NotchWindow? NotchUnderPointer()
+    {
+        if (Brim.Views.NotchWindow.Mirrors.Count == 0) return notch;
+        Native.GetCursorPos(out var pt);
+        var mon = Native.MonitorFromPoint(pt, 2);
+        return AllNotches.FirstOrDefault(n => n.Monitor == mon) ?? notch;
     }
 
     void OnHotkey(int id)
@@ -953,7 +1054,7 @@ public partial class App : Application
         switch (id)
         {
             case 1:
-                notch?.ToggleOpen();
+                NotchUnderPointer()?.ToggleOpen();
                 break;
             case >= 2 and <= 10:
                 int index = id - 2;
@@ -1024,6 +1125,12 @@ public partial class App : Application
     {
         OpenSettings();
         settings?.ShowUninstallSearch(name);
+    }
+
+    /// <summary>Restart into the downloaded update (the new Setup waits for Brim to close, then installs and starts it).</summary>
+    public void InstallUpdate()
+    {
+        if (Updater.Install()) Quit();
     }
 
     public void Quit()

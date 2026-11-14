@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -192,7 +192,7 @@ public static class GameLibrary
         try { found.AddRange(Ubisoft()); } catch (Exception ex) { Log.Error("ubisoft games", ex); }
         try { found.AddRange(PublisherInstalls()); } catch (Exception ex) { Log.Error("ea/blizzard games", ex); }
         try { found.AddRange(Xbox()); } catch (Exception ex) { Log.Error("xbox games", ex); }
-        foreach (var m in S.ManualGames)
+        foreach (var m in S.ManualGames.Where(m => !Path.IsPathFullyQualified(m.Path) || File.Exists(m.Path)))
             found.Add(new GameInfo { Key = "manual:" + m.Path.ToLowerInvariant(), Name = m.Name, Source = "Added by you", Exe = m.Path, Args = m.Args, Folder = Path.GetDirectoryName(m.Path) });
 
         // Game folders last, skipping anything already found another way
@@ -254,6 +254,13 @@ public static class GameLibrary
             if (S.GameLaunches.TryGetValue(g.Key, out var t) && t > g.LastPlayed) g.LastPlayed = t;
         }
         return Ordered(found.GroupBy(g => g.Key).Select(x => x.First()));
+    }
+
+    /// <summary>The folder exists and has something in it (a deleted game can leave an empty folder behind).</summary>
+    static bool HasFiles(string? dir)
+    {
+        try { return !string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any(); }
+        catch { return false; }
     }
 
     /// <summary>Your own order first (if you've dragged games around), then everything else, most recently played first.</summary>
@@ -344,6 +351,8 @@ public static class GameLibrary
                 if (id.Length == 0 || NotAGame.IsMatch(name) || id is "228980" or "431960") continue;
                 long.TryParse(Field("LastPlayed"), out long last);
                 var dir = Path.Combine(apps, "common", Field("installdir"));
+                // Steam can leave a game's record behind after its folder is gone (deleted by hand, old drive): skip those
+                if (!HasFiles(dir)) continue;
                 yield return new GameInfo
                 {
                     Key = "steam:" + id,
@@ -384,6 +393,8 @@ public static class GameLibrary
                 int GetInt(string k) => entry.FirstOrDefault(kv => kv.Key.Equals(k, StringComparison.OrdinalIgnoreCase)).Value is int i ? i : 0;
                 var exe = Get("Exe").Trim().Trim('"');
                 if (exe.Length == 0) continue;
+                // A program that has since been removed (only for real file paths; links and commands stay)
+                if (Path.IsPathFullyQualified(exe) && !File.Exists(exe)) continue;
                 var name = Get("AppName");
                 var start = Get("StartDir").Trim().Trim('"');
                 int last = GetInt("LastPlayTime");
@@ -444,6 +455,7 @@ public static class GameLibrary
             if (root.TryGetProperty("bIsIncompleteInstall", out var inc) && inc.ValueKind == JsonValueKind.True) continue;
             var app = Str("AppName");
             var loc = Str("InstallLocation");
+            if (!HasFiles(loc)) continue; // uninstalled (or the folder was deleted) but Epic kept the record
             yield return new GameInfo
             {
                 Key = "epic:" + app,

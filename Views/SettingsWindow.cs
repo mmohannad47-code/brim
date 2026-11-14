@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -141,7 +141,7 @@ public sealed class SettingsWindow : Window
                 Chips(new[] { "Clock", "Date", "Battery", "Weather", "Cpu", "Nothing" }, S.Face.ToString(), v => { S.Face = Enum.Parse<RestingFace>(v); Commit(); })),
             Row("Live activities", "Pops out for volume changes, charging, switching to headphones, mic mute and the focus timer",
                 Switch(S.LiveActivities, v => { S.LiveActivities = v; Commit(); })),
-            ScreenRow("Screen", S.NotchScreen, v => { S.NotchScreen = v; Commit(); }),
+            ScreenRow("Screen", S.NotchScreen, v => { S.NotchScreen = v; Commit(); }, everyScreen: true),
             Row("Song in the closed notch", "Cover, title and live bars while music plays", Switch(S.ShowSongWhenClosed, v => { S.ShowSongWhenClosed = v; Commit(); })),
             Row("Pop out on new song", "Shows the next track for a few seconds", Switch(S.SongPopup, v => { S.SongPopup = v; Commit(); }))
         );
@@ -1649,6 +1649,32 @@ public sealed class SettingsWindow : Window
                     }))
         );
 
+        Section("Updates");
+        string status = Updater.Now switch
+        {
+            Updater.State.Checking => "Checking…",
+            Updater.State.Downloading => $"Downloading Brim {Updater.NewVersion}… {Updater.Progress:P0}",
+            Updater.State.Ready => $"Brim {Updater.NewVersion} is downloaded and ready",
+            Updater.State.UpToDate => $"Up to date (checked {Updater.LastChecked:HH:mm})",
+            Updater.State.Failed => Updater.Problem ?? "Couldn't check",
+            _ => Installer.RunningInstalled ? "Brim checks a little after it starts, then every few hours" : "Only the installed Brim updates itself",
+        };
+        Card(
+            Row("Get updates automatically", "Downloads new versions in the background. Installing always asks first (it restarts Brim).",
+                Switch(S.CheckUpdates, v => { S.CheckUpdates = v; Commit(); })),
+            Updater.Now == Updater.State.Ready
+                ? Row($"Brim {Updater.NewVersion}", status, PillBtn("Restart to update", () => AppRef.InstallUpdate()))
+                : Row($"Brim {Installer.Version}", status, PillBtn("Check now", async () =>
+                {
+                    if (!Installer.RunningInstalled) { Launcher.Open(Updater.ReleasesPage); return; }
+                    var check = Updater.Check();
+                    Rebuild();
+                    await check;
+                    Rebuild();
+                })),
+            Row("What's new", "Release notes for every version", PillBtn("Open", () => Launcher.Open($"https://github.com/{Updater.Repo}/releases")))
+        );
+
         Section("Backup");
         Card(
             Row("Save my settings", "Your notch, dock, widgets, shortcuts, games and look, in one file", PillBtn("Save to file…", () =>
@@ -1820,16 +1846,19 @@ public sealed class SettingsWindow : Window
     }
 
     /// <summary>Pick a screen, shown only when there's more than one.</summary>
-    FrameworkElement? ScreenRow(string label, string current, Action<string> set)
+    FrameworkElement? ScreenRow(string label, string current, Action<string> set, bool everyScreen = false)
     {
         var screens = Native.Screens();
-        if (screens.Count < 2) return null;
-        var names = screens.Select((s, i) => s.Primary ? "Main screen" : $"Screen {i + 1}").ToArray();
+        // "Every screen" stays visible while it's chosen, even with one screen plugged in
+        if (screens.Count < 2 && !(everyScreen && current == "*")) return null;
+        var names = screens.Select((s, i) => s.Primary ? "Main screen" : $"Screen {i + 1}").ToList();
+        if (everyScreen) names.Add("Every screen");
         int idx = screens.FindIndex(s => string.Equals(s.Device, current, StringComparison.OrdinalIgnoreCase));
-        var sel = idx >= 0 ? names[idx] : "Main screen";
-        return Row(label, null, Chips(names, sel, v =>
+        var sel = current == "*" && everyScreen ? "Every screen" : idx >= 0 ? names[idx] : "Main screen";
+        return Row(label, everyScreen ? "Every screen puts a notch at the top of each monitor; pop-ups show on all of them" : null, Chips(names.ToArray(), sel, v =>
         {
-            int k = Array.IndexOf(names, v);
+            if (v == "Every screen") { set("*"); return; }
+            int k = names.IndexOf(v);
             set(k <= 0 || screens[k].Primary ? "" : screens[k].Device);
         }));
     }

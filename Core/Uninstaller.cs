@@ -62,8 +62,41 @@ public static class Uninstaller
         (new(@"(?i)^hoyoplay"), new(@"(?i)cognosphere|hoyoverse|mihoyo")),
     };
 
+    static int lastLeftovers = -1;
+
+    /// <summary>
+    /// An entry Windows kept for something that's gone (deleted by hand, removed by its launcher, an old drive): its
+    /// folder is missing or empty, and its uninstaller is missing too, or it's a launcher link (Steam, Epic…) that would
+    /// only uninstall a game that isn't there.
+    /// </summary>
+    static bool Leftover(string? location, string uninstall)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(location) || !Path.IsPathFullyQualified(location)) return false; // can't tell: keep it
+            if (Directory.Exists(location) && Directory.EnumerateFileSystemEntries(location).Any()) return false;
+            if (uninstall.Contains("://")) return true; // e.g. steam.exe steam://uninstall/123 for a game that's gone
+            var exe = ProgramOf(uninstall);
+            if (exe == null) return false;
+            if (Regex.IsMatch(Path.GetFileName(exe), @"(?i)^(msiexec|rundll32|cmd|powershell)\.exe$")) return true; // the folder it would remove is gone
+            return !File.Exists(exe);
+        }
+        catch { return false; }
+    }
+
+    /// <summary>The program an uninstall command runs ("C:\x\unins000.exe" /S → C:\x\unins000.exe).</summary>
+    static string? ProgramOf(string command)
+    {
+        var c = command.Trim();
+        if (c.StartsWith('"')) { int end = c.IndexOf('"', 1); return end > 1 ? c[1..end] : null; }
+        int exe = c.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+        if (exe > 0) return c[..(exe + 4)];
+        return Path.IsPathFullyQualified(c) ? c : null;
+    }
+
     public static List<InstalledProgram> List()
     {
+        int leftovers = 0;
         var list = new List<InstalledProgram>();
         void Read(RegistryKey root, string path)
         {
@@ -86,6 +119,7 @@ public static class Uninstaller
                         DateTime? date = null;
                         if (e.GetValue("InstallDate") is string d && DateTime.TryParseExact(d, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt)) date = dt;
                         var loc = (e.GetValue("InstallLocation") as string)?.Trim().Trim('"');
+                        if (Leftover(loc, un)) { leftovers++; continue; }
                         list.Add(new InstalledProgram
                         {
                             Key = (root == Registry.CurrentUser ? "HKCU\\" : "HKLM\\") + path + "\\" + sub,
@@ -109,6 +143,7 @@ public static class Uninstaller
         Read(Registry.LocalMachine, U);
         Read(Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall");
         Read(Registry.CurrentUser, U);
+        if (leftovers != lastLeftovers) { lastLeftovers = leftovers; Log.Note("uninstall", $"skipped {leftovers} leftover entries for programs that are no longer on this PC"); }
         return list.GroupBy(p => p.Name + "|" + p.Version, StringComparer.OrdinalIgnoreCase).Select(g => g.First())
                    .OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
     }

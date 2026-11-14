@@ -143,7 +143,7 @@ public class AppSettings
     public int OledDimMinutes { get; set; } = 2;
     /// <summary>Minutes without input before the whole screen goes black (0 = never)</summary>
     public int OledBlackMinutes { get; set; }
-    public int HoverDelayMs { get; set; } = 120;
+    public int HoverDelayMs { get; set; } = 20;
     public string Speed { get; set; } = "Smooth";
     public bool HideInFullscreen { get; set; } = true;
     public bool HideFromCapture { get; set; }
@@ -243,6 +243,8 @@ public class AppSettings
 
     // General
     public bool StartWithWindows { get; set; }
+    /// <summary>Look for new versions on GitHub and download them in the background (installing always asks first)</summary>
+    public bool CheckUpdates { get; set; } = true;
     public bool FirstRunDone { get; set; }
 }
 

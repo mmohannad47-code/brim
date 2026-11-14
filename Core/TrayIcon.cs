@@ -78,6 +78,8 @@ public sealed class TrayIcon : IDisposable
             app.RefreshSettingsWindow();
         }));
         menu.Items.Add(new Separator { Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)), Margin = new Thickness(6, 3, 6, 3) });
+        if (Updater.Now == Updater.State.Ready)
+            menu.Items.Add(Item($"Restart to update to Brim {Updater.NewVersion}", () => app.InstallUpdate()));
         if (S.Taskbar != TaskbarMode.Windows)
             menu.Items.Add(Item("Use Windows' taskbar again", () =>
             {
