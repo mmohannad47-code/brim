@@ -816,6 +816,7 @@ public static class MessageCenter
         S.MessageApps[app] = r;
         SettingsStore.Save();
         Refilter();
+        WindowsBanners.Sync(); // an app turned off in Brim gets its Windows pop-up back
     }
 
     // ------------------------------------------------------------------ actions

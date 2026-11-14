@@ -126,6 +126,7 @@ public static class Installer
         }
         try { TaskbarManager.RestoreAll(); } catch (Exception ex) { Log.Error("uninstall taskbar", ex); }
         try { DesktopIcons.Set(true); } catch { }
+        try { SettingsStore.Load(); WindowsBanners.RestoreAll(); } catch { } // the running Brim was closed abruptly above
         try { Startup.Set(false); } catch { }
         try { WallpaperEngine.Control("play"); } catch { }
         try { if (File.Exists(StartMenuLink)) File.Delete(StartMenuLink); } catch { }

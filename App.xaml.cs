@@ -335,7 +335,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--banners-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -357,6 +357,21 @@ public partial class App : Application
                                 sb.AppendLine($"file {System.IO.Path.GetFileName(f)} {new System.IO.FileInfo(f).Length} bytes, matches release checksum: {hash.Equals(Updater.ExpectedHash, StringComparison.OrdinalIgnoreCase)}");
                             }
                             break;
+                        case "--banners-test":
+                        {
+                            SettingsStore.Load(); // (read-only: nothing is saved)
+                            string Val(string app) => S.MessageApps.TryGetValue(app, out var r) && r.AppId != null
+                                ? $"{(Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\" + r.AppId)?.GetValue("ShowBanner") ?? "not set")}"
+                                : "no id";
+                            var apps = S.MessageApps.Keys.Where(a => S.MessageApps[a].AppId != null).ToList();
+                            sb.AppendLine("before:    " + string.Join(", ", apps.Select(a => $"{a}={Val(a)}")));
+                            S.NotchOnlyPopups = true; S.MessagePopups = true;
+                            WindowsBanners.Sync();
+                            sb.AppendLine("switch on: " + string.Join(", ", apps.Select(a => $"{a}={Val(a)}")) + $"  (Brim turned off: {string.Join(", ", S.BannersHidden)})");
+                            WindowsBanners.RestoreAll();
+                            sb.AppendLine("restored:  " + string.Join(", ", apps.Select(a => $"{a}={Val(a)}")));
+                            break;
+                        }
                         case "--mirror-test":
                             ThemeManager.Apply();
                             var main = new Brim.Views.NotchWindow { Left = -4000 };
@@ -759,6 +774,7 @@ public partial class App : Application
                 Log.Note("update", "pop-up: " + (notch?.ShowAction("", $"Brim {Updater.NewVersion} is ready", "Click to restart and update",
                     InstallUpdate, 10) ?? "no notch"));
             Updater.Start();
+            WindowsBanners.Start(); // "only pop up in the notch"
             // A Wallpaper Engine video Brim used to play itself: hand it to Wallpaper Engine (it plays its own better)
             if (S.LiveWallpaper != null && WallpaperEngine.Installed &&
                 WallpaperEngine.Items().FirstOrDefault(i => string.Equals(i.File, S.LiveWallpaper, StringComparison.OrdinalIgnoreCase)) is { } weVideo)
@@ -1144,6 +1160,7 @@ public partial class App : Application
     {
         try { TrayService.Stop(); } catch { }
         try { LiveWallpaperHost.Stop(); } catch { }
+        try { WindowsBanners.RestoreAll(); } catch { } // Windows' pop-ups back while Brim isn't running
         try { dock?.RemoveAppBar(); } catch { }
         TaskbarManager.RestoreAll();
         try { DesktopIcons.Set(true); } catch { }

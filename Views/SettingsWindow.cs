@@ -258,7 +258,9 @@ public sealed class SettingsWindow : Window
         Section("Behaviour");
         Card(
             Row("Pop out for new messages", "The notch shows who wrote and the first line, for messages you'd see in the tab",
-                Switch(S.MessagePopups, v => { S.MessagePopups = v; Commit(); })),
+                Switch(S.MessagePopups, v => { S.MessagePopups = v; Commit(); WindowsBanners.Sync(); Rebuild(); })),
+            S.MessagePopups ? Row("Only pop up in the notch", "Turns off Windows' own corner pop-up for the apps shown here, so you don't get both. They still reach Windows' notification centre. Windows' pop-ups come back if you turn this off or quit Brim.",
+                Switch(S.NotchOnlyPopups, v => { S.NotchOnlyPopups = v; Commit(); WindowsBanners.Sync(); })) : null,
             Row("Mirror every app's notifications", "Show all of Windows' notifications in the notch, not only chat and mail apps. Each app can still be turned off below.",
                 Switch(S.MessagesAllApps, v => { MessageCenter.SetAllApps(v); Rebuild(); })),
             Row("Messages tab", S.NotchTabs.Contains("Messages") ? "Shown in the notch" : "Hidden (turn it on in Notch › Tabs)",

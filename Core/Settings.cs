@@ -243,6 +243,10 @@ public class AppSettings
 
     // General
     public bool StartWithWindows { get; set; }
+    /// <summary>Turn off Windows' own notification pop-up for apps shown in the notch, so only the notch pops up</summary>
+    public bool NotchOnlyPopups { get; set; }
+    /// <summary>Apps whose Windows pop-ups Brim turned off (and must turn back on)</summary>
+    public List<string> BannersHidden { get; set; } = new();
     /// <summary>Look for new versions on GitHub and download them in the background (installing always asks first)</summary>
     public bool CheckUpdates { get; set; } = true;
     public bool FirstRunDone { get; set; }
