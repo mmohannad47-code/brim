@@ -1200,6 +1200,9 @@ public partial class App : Application
         settings?.ShowUninstallSearch(name);
     }
 
+    /// <summary>Brim's own tray menu (also from the dock's tray panel).</summary>
+    public void ShowTrayMenu() => tray?.ShowMenu();
+
     /// <summary>Restart into the downloaded update (the new Setup waits for Brim to close, then installs and starts it).</summary>
     public void InstallUpdate()
     {

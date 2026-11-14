@@ -130,29 +130,63 @@ public sealed class WindowPreview : Window
     [DllImport("user32.dll")] static extern bool GetWindowPlacement(IntPtr h, ref WINDOWPLACEMENT p);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out Native.RECT r, int size);
 
-    /// <summary>Preview size (DIPs) with the same shape as the window: up to 260 wide or 300 tall, never too narrow for its title.</summary>
-    static (double w, double h) SlotFor(IntPtr hwnd)
+    /// <summary>
+    /// How much of a window is invisible resize border (left, top, right, bottom), as a share of its size. Windows
+    /// includes that border in the live picture, which showed up as empty edges. Remembered per window, because a
+    /// minimised window can't be measured.
+    /// </summary>
+    static readonly Dictionary<IntPtr, (double l, double t, double r, double b)> borders = new();
+
+    static (double l, double t, double r, double b) BordersOf(IntPtr hwnd)
     {
-        double aspect = 16.0 / 10;
+        if (!Native.IsIconic(hwnd) && Native.GetWindowRect(hwnd, out var wr) &&
+            DwmGetWindowAttribute(hwnd, 9 /* visible frame */, out var vis, Marshal.SizeOf<Native.RECT>()) == 0)
+        {
+            double w = Math.Max(1, wr.Right - wr.Left), h = Math.Max(1, wr.Bottom - wr.Top);
+            var b = (Math.Max(0, vis.Left - wr.Left) / w, Math.Max(0, vis.Top - wr.Top) / h,
+                     Math.Max(0, wr.Right - vis.Right) / w, Math.Max(0, wr.Bottom - vis.Bottom) / h);
+            if (b.Item1 + b.Item3 < 0.2 && b.Item2 + b.Item4 < 0.2) { borders[hwnd] = b; return b; }
+        }
+        return borders.TryGetValue(hwnd, out var known) ? known : (0, 0, 0, 0);
+    }
+
+    /// <summary>The visible window's width ÷ height.</summary>
+    static double AspectOf(IntPtr hwnd)
+    {
         try
         {
             Native.RECT r;
             if (Native.IsIconic(hwnd))
             {
-                // Minimised: the size it has when restored
+                // Minimised: the size it has when restored, without its invisible border
                 var p = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
                 GetWindowPlacement(hwnd, ref p);
                 r = p.normal;
+                var (l, t, rr, b) = BordersOf(hwnd);
+                double ww = (r.Right - r.Left) * (1 - l - rr), hh = (r.Bottom - r.Top) * (1 - t - b);
+                if (ww > 50 && hh > 50) return ww / hh;
             }
-            else if (DwmGetWindowAttribute(hwnd, 9 /* extended frame bounds */, out r, Marshal.SizeOf<Native.RECT>()) != 0)
-                Native.GetWindowRect(hwnd, out r);
-            double w = r.Right - r.Left, h = r.Bottom - r.Top;
-            if (w > 50 && h > 50) aspect = w / h;
+            else if (DwmGetWindowAttribute(hwnd, 9, out r, Marshal.SizeOf<Native.RECT>()) == 0 || Native.GetWindowRect(hwnd, out r))
+            {
+                double w = r.Right - r.Left, h = r.Bottom - r.Top;
+                if (w > 50 && h > 50) return w / h;
+            }
         }
         catch { }
-        if (aspect >= 1.2) return (260, Math.Clamp(260 / aspect, 110, 165));   // wide: as before
-        double width = Math.Clamp(240 * aspect, 130, 260);                    // tall or square
-        return (width, Math.Clamp(width / aspect, 150, 300));
+        return 16.0 / 10;
+    }
+
+    /// <summary>
+    /// Preview size (DIPs), exactly the window's shape so the picture fills it edge to edge: 260 wide for wide windows,
+    /// 300 tall for tall ones, and never too narrow for the title above it.
+    /// </summary>
+    static (double w, double h) SlotFor(IntPtr hwnd)
+    {
+        double aspect = Math.Clamp(AspectOf(hwnd), 0.25, 4);
+        double w, h;
+        if (aspect >= 1) { w = 260; h = w / aspect; if (h < 100) { h = 100; w = h * aspect; } }
+        else { h = 300; w = h * aspect; if (w < 110) { w = 110; h = w / aspect; } }
+        return (Math.Round(w), Math.Round(h));
     }
 
     static bool IsInside(DependencyObject d, DependencyObject target)
@@ -260,17 +294,23 @@ public sealed class WindowPreview : Window
                 continue;
             }
 
-            // Fit the window's shape inside the slot, centred
+            // Only the visible window (not its invisible resize border), drawn to fill the slot exactly: the slot
+            // already has the window's shape, so nothing is stretched and no empty edges show
+            var (bl, bt, br, bb) = BordersOf(win.Hwnd);
+            var source = new Native.RECT
+            {
+                Left = (int)Math.Round(src.x * bl), Top = (int)Math.Round(src.y * bt),
+                Right = src.x - (int)Math.Round(src.x * br), Bottom = src.y - (int)Math.Round(src.y * bb),
+            };
             var topLeft = toDevice.Transform(slot.TransformToAncestor(this).Transform(new Point(0, 0)));
             var size = toDevice.Transform(new Point(slot.ActualWidth, slot.ActualHeight));
-            double scale = Math.Min(size.X / Math.Max(1, src.x), size.Y / Math.Max(1, src.y));
-            int w = (int)(src.x * scale), h = (int)(src.y * scale);
-            int x = (int)(topLeft.X + (size.X - w) / 2), y = (int)(topLeft.Y + (size.Y - h) / 2);
+            int x = (int)Math.Round(topLeft.X), y = (int)Math.Round(topLeft.Y);
 
             var props = new THUMBPROPS
             {
-                dwFlags = 0x1 | 0x4 | 0x8 | 0x10, // destination, opacity, visible, client area only
-                rcDestination = new Native.RECT { Left = x, Top = y, Right = x + w, Bottom = y + h },
+                dwFlags = 0x1 | 0x2 | 0x4 | 0x8 | 0x10, // destination, source, opacity, visible, client area only
+                rcDestination = new Native.RECT { Left = x, Top = y, Right = x + (int)Math.Round(size.X), Bottom = y + (int)Math.Round(size.Y) },
+                rcSource = source,
                 opacity = 255,
                 fVisible = true,
                 fSourceClientAreaOnly = false,

@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Windows;
@@ -40,6 +41,9 @@ public sealed class Flyout : Window
         bool sawMenu = false;
         int goneTicks = 0;
         var me = new WindowInteropHelper(this).Handle;
+        // The app's pop-up windows before the click: anything new after it is its menu, even when it isn't the
+        // focused window (some apps' menus never take focus)
+        baseline = PopupsOf(pid);
         holdTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         holdTimer.Tick += (_, _) =>
         {
@@ -58,11 +62,31 @@ public sealed class Flyout : Window
         holdTimer.Start();
     }
 
+    HashSet<IntPtr> baseline = new();
+
+    /// <summary>The app's visible pop-up windows (no title bar): where its own drawn menus live.</summary>
+    static HashSet<IntPtr> PopupsOf(uint pid)
+    {
+        var set = new HashSet<IntPtr>();
+        Native.EnumWindows((h, _) =>
+        {
+            if (!Native.IsWindowVisible(h)) return true;
+            Native.GetWindowThreadProcessId(h, out uint p);
+            if (p != pid) return true;
+            long style = Native.GetWindowLongPtr(h, -16).ToInt64();
+            if ((style & 0x80000000L) != 0 && (style & 0x00C00000L) != 0x00C00000L) set.Add(h);
+            return true;
+        }, IntPtr.Zero);
+        return set;
+    }
+
     /// <summary>A standard Windows menu, or the app's own popup (apps that draw their own menus), is on screen.</summary>
-    static bool MenuShowing(uint pid, IntPtr owner, IntPtr me)
+    bool MenuShowing(uint pid, IntPtr owner, IntPtr me)
     {
         var m = Native.FindWindow("#32768", null);
         if (m != IntPtr.Zero && Native.IsWindowVisible(m)) return true;
+        // A pop-up window the app opened after the click (its own menu, focused or not)
+        foreach (var h in PopupsOf(pid)) if (h != me && !baseline.Contains(h)) return true;
         var fg = Native.GetForegroundWindow();
         if (fg == IntPtr.Zero || fg == owner || fg == me || !Native.IsWindowVisible(fg)) return false;
         Native.GetWindowThreadProcessId(fg, out uint fgPid);
@@ -592,6 +616,14 @@ public sealed class TrayPanel : StackPanel
             async void Forward(bool right, bool dbl)
             {
                 Native.AllowSetForegroundWindow(item.Pid);
+                if (right && item.Pid == Environment.ProcessId)
+                {
+                    // Brim's own icon: close this panel, then open Brim's menu just like its real tray icon does
+                    Flyout.CloseOpen();
+                    await System.Threading.Tasks.Task.Delay(150);
+                    ((App)Application.Current).ShowTrayMenu();
+                    return;
+                }
                 if (right)
                 {
                     // Right-click: the app's menu opens over this panel, and the panel stays open behind it

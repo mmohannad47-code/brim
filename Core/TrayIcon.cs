@@ -64,7 +64,7 @@ public sealed class TrayIcon : IDisposable
         return IntPtr.Zero;
     }
 
-    void ShowMenu()
+    public void ShowMenu()
     {
         var menu = new ContextMenu { Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
         menu.Items.Add(Item("Open notch", () => app.Notch?.ToggleOpen()));
