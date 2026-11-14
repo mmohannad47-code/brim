@@ -127,7 +127,9 @@ public class AppSettings
     public string NightTheme { get; set; } = "Black";
     /// <summary>Screen (device name) for the notch and dock; empty = main screen</summary>
     public string NotchScreen { get; set; } = "";
-    public string DockScreen { get; set; } = "";
+    public string DockScreen { get; set; } = "*"; // "*" = every screen (like Windows' own taskbar)
+    /// <summary>Set once older settings were moved to "every screen" for the dock</summary>
+    public bool DockEveryScreenOffered { get; set; }
     public Dictionary<string, double> GamePlaySeconds { get; set; } = new();
     /// <summary>Always, Uncovered (pause when covered) or Desktop (only while the desktop is focused)</summary>
     public string LivePlayMode { get; set; } = "Desktop";
@@ -325,7 +327,11 @@ public static class SettingsStore
                 }
                 Current.SeenTabs.Add(id);
             }
-            if (added.Count > 0 && File.Exists(FilePath)) Save();
+            // The dock used to be on the main screen only: show it on every screen, like Windows' taskbar (once;
+            // anyone who picked one particular other screen keeps it)
+            bool moved = false;
+            if (!Current.DockEveryScreenOffered) { if (Current.DockScreen == "") Current.DockScreen = "*"; Current.DockEveryScreenOffered = true; moved = true; }
+            if ((added.Count > 0 || moved) && File.Exists(FilePath)) Save();
         }
         catch (Exception ex)
         {

@@ -1462,7 +1462,7 @@ public sealed class SettingsWindow : Window
             Section("Dock placement");
             Card(
                 Row("Position", "Along the bottom of the screen", Chips(new[] { "Left", "Center", "Right" }, S.DockPosition, v => { S.DockPosition = v; Commit(); })),
-                ScreenRow("Screen", S.DockScreen, v => { S.DockScreen = v; Commit(); }),
+                ScreenRow("Screen", S.DockScreen, v => { S.DockScreen = v; Commit(); }, everyScreen: true),
                 Row("Hide until I point at the bottom edge", null, Switch(S.DockAutoHide, v => { S.DockAutoHide = v; Commit(); Rebuild(); })),
                 S.DockAutoHide ? null : Row("Keep windows above the dock", "Maximised windows stop where the dock begins", Switch(S.DockReserve, v => { S.DockReserve = v; Commit(); Rebuild(); })),
                 S.DockAutoHide || !S.DockReserve ? null : Row("With a maximised window",
@@ -1858,7 +1858,7 @@ public sealed class SettingsWindow : Window
         if (everyScreen) names.Add("Every screen");
         int idx = screens.FindIndex(s => string.Equals(s.Device, current, StringComparison.OrdinalIgnoreCase));
         var sel = current == "*" && everyScreen ? "Every screen" : idx >= 0 ? names[idx] : "Main screen";
-        return Row(label, everyScreen ? "Every screen puts a notch at the top of each monitor; pop-ups show on all of them" : null, Chips(names.ToArray(), sel, v =>
+        return Row(label, everyScreen ? "Every screen puts one on each monitor (and adds or removes them as you plug monitors in or out)" : null, Chips(names.ToArray(), sel, v =>
         {
             if (v == "Every screen") { set("*"); return; }
             int k = names.IndexOf(v);

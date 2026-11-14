@@ -335,7 +335,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--banners-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--banners-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -372,7 +372,31 @@ public partial class App : Application
                             sb.AppendLine("restored:  " + string.Join(", ", apps.Select(a => $"{a}={Val(a)}")));
                             break;
                         }
-                        case "--mirror-test":
+                        case "--dock-screens-test":
+                        {
+                            SettingsStore.Load();
+                            S.DockReserve = false; S.DockAutoHide = false; // (read-only: nothing is saved)
+                            ThemeManager.Apply();
+                            var d1 = new Brim.Views.DockWindow();
+                            var d2 = new Brim.Views.DockWindow(Native.Screens()[0].Device);
+                            Brim.Views.DockWindow.Others.Add(d2);
+                            d1.Show(); d2.Show();
+                            await System.Threading.Tasks.Task.Delay(2500);
+                            d1.RefreshApps(); d2.RefreshApps();
+                            await System.Threading.Tasks.Task.Delay(500);
+                            sb.AppendLine("main:  " + d1.DebugState);
+                            sb.AppendLine("other: " + d2.DebugState);
+                            d2.SetFullscreen(true);
+                            await System.Threading.Tasks.Task.Delay(600);
+                            sb.AppendLine("after fullscreen on the other's screen:");
+                            sb.AppendLine("  main:  " + d1.DebugState);
+                            sb.AppendLine("  other: " + d2.DebugState);
+                            d2.SetFullscreen(false);
+                            await System.Threading.Tasks.Task.Delay(600);
+                            sb.AppendLine("back: other " + d2.DebugState);
+                            d1.Close(); d2.Close();
+                            break;
+                        }                        case "--mirror-test":
                             ThemeManager.Apply();
                             var main = new Brim.Views.NotchWindow { Left = -4000 };
                             main.Show();
@@ -721,7 +745,7 @@ public partial class App : Application
         messages.Register(14, Native.MOD_CONTROL | Native.MOD_ALT, 'M');
         messages.Register(15, Native.MOD_CONTROL, 0x20 /* Space */);
         messages.Register(16, Native.MOD_CONTROL | Native.MOD_ALT, 'V');
-        WidgetWindow.WentOnTop += () => { notch?.EnsureTopmost(); dock?.EnsureTopmost(); };
+        WidgetWindow.WentOnTop += () => { notch?.EnsureTopmost(); foreach (var d in AllDocks) d.EnsureTopmost(); };
         AutoLook.Changed += () => ApplyAll();
         AutoLook.Start();
         WeatherService.Updated += () => { if (S.AutoTheme) AutoLook.Check(); };
@@ -844,6 +868,7 @@ public partial class App : Application
                     dock.Show();
                 }
                 else dock.ApplySettings();
+                SyncDocks();
             }
             else
             {
@@ -857,6 +882,7 @@ public partial class App : Application
                     dock.Close();
                     dock = null;
                 }
+                SyncDocks(); // closes the other screens' docks too
             }
 
             widgets.Sync();
@@ -934,7 +960,7 @@ public partial class App : Application
         fsCheckedAt = DateTime.Now;
         bool fs = WindowTracker.ForegroundIsFullscreen();
         SetNotchesFullscreen(fs);
-        dock?.SetFullscreen(fs);
+        SetDocksFullscreen(fs);
     }
 
     int winEvents, reacts;
@@ -993,9 +1019,9 @@ public partial class App : Application
         CheckAppInFront();
         bool fs = WindowTracker.ForegroundIsFullscreen();
         SetNotchesFullscreen(fs);
-        dock?.SetFullscreen(fs);
+        SetDocksFullscreen(fs);
         TaskbarManager.Enforce();
-        dock?.RefreshApps();
+        foreach (var d in AllDocks) d.RefreshApps();
         widgets.CheckDesktop();
     }
 
@@ -1007,7 +1033,7 @@ public partial class App : Application
         CheckAppInFront();
         bool fs = WindowTracker.ForegroundIsFullscreen();
         SetNotchesFullscreen(fs);
-        dock?.SetFullscreen(fs);
+        SetDocksFullscreen(fs);
         TaskbarManager.Enforce();
         widgets.CheckDesktop();
         if (shellTicks % 4 == 0) TrayService.Instance?.KeepInFront(); // every 2 s is plenty
@@ -1016,11 +1042,42 @@ public partial class App : Application
         if (shellTicks % 6 == 0)
         {
             notch?.EnsureTopmost();
-            dock?.EnsureTopmost();
-            dock?.CheckReservation(); // "keep windows above the dock" holds even if Explorer drops the strip
+            foreach (var d in AllDocks) { d.EnsureTopmost(); d.CheckReservation(); } // "keep windows above the dock" holds even if Explorer drops the strip
+            if (S.Taskbar == TaskbarMode.Dock && S.DockScreen == "*") SyncDocks(); // a screen plugged in or out
             if (S.NotchScreen == "*") SyncNotches(); // a screen plugged in or out
             if (S.HideDesktopIcons) DesktopIcons.Set(false);
         }
+    }
+
+    // ---------- a dock on every screen ("Every screen" in Taskbar › Screen, the default)
+
+    System.Collections.Generic.IEnumerable<DockWindow> AllDocks =>
+        dock == null ? DockWindow.Others.ToList() : DockWindow.Others.Prepend(dock).ToList();
+
+    void SyncDocks()
+    {
+        var others = dock != null && S.DockScreen == "*" ? Native.Screens().Where(s => !s.Primary).Select(s => s.Device).ToList() : new System.Collections.Generic.List<string>();
+        foreach (var d in DockWindow.Others.Where(d => !others.Contains(d.ScreenDevice!, StringComparer.OrdinalIgnoreCase)).ToList())
+        {
+            DockWindow.Others.Remove(d);
+            d.Close();
+        }
+        foreach (var device in others.Where(x => !DockWindow.Others.Any(d => string.Equals(d.ScreenDevice, x, StringComparison.OrdinalIgnoreCase))))
+        {
+            var d = new DockWindow(device);
+            DockWindow.Others.Add(d);
+            d.Show();
+            Log.Note("dock", $"added a dock on {device}");
+        }
+        foreach (var d in DockWindow.Others) d.ApplySettings();
+    }
+
+    /// <summary>Hide the dock on the screen with the fullscreen game or video (the others stay).</summary>
+    void SetDocksFullscreen(bool fs)
+    {
+        if (DockWindow.Others.Count == 0) { dock?.SetFullscreen(fs); return; }
+        var fsMonitor = fs ? Native.MonitorFromWindow(Native.GetForegroundWindow(), 2) : IntPtr.Zero;
+        foreach (var d in AllDocks) d.SetFullscreen(fs && d.Monitor == fsMonitor);
     }
 
     // ---------- a notch on every screen ("Every screen" in Notch › Screen)
@@ -1161,7 +1218,7 @@ public partial class App : Application
         try { TrayService.Stop(); } catch { }
         try { LiveWallpaperHost.Stop(); } catch { }
         try { WindowsBanners.RestoreAll(); } catch { } // Windows' pop-ups back while Brim isn't running
-        try { dock?.RemoveAppBar(); } catch { }
+        try { foreach (var d in AllDocks) d.RemoveAppBar(); } catch { }
         TaskbarManager.RestoreAll();
         try { DesktopIcons.Set(true); } catch { }
     }

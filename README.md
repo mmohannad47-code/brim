@@ -60,6 +60,7 @@ It also pops out briefly for song changes, new messages, muting or unmuting your
 - Point at an app to see live previews of its windows.
 - **Red badge:** the app has notifications or unread messages. **Blue arrow badge:** it's downloading something.
 - **⌃** opens the tray icons. The status icons open quick settings. The far-right strip is *show desktop*.
+- It's on every screen, like Windows' taskbar (or pick one screen in **Settings › Taskbar › Screen**). An optional Task Manager button can sit next to the tray.
 - Size, spacing, position, auto-hide and whether windows stay above the dock are all in **Settings › Taskbar**.
 
 Prefer Windows' own taskbar? The same page can just tidy it (centre or left icons, hide Search/Task View/Widgets) or auto-hide it.

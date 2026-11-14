@@ -89,6 +89,20 @@ public partial class DockWindow : Window
 
     static AppSettings S => SettingsStore.Current;
 
+    /// <summary>Docks on the other screens ("Every screen"): each shows your apps, clock and buttons on its own screen.</summary>
+    public static readonly List<DockWindow> Others = new();
+    /// <summary>The screen this dock sits on when it isn't the main one (null: the one picked in settings).</summary>
+    readonly string? screenDevice;
+    public string? ScreenDevice => screenDevice;
+    string ScreenId => screenDevice ?? (S.DockScreen == "*" ? "" : S.DockScreen);
+    public IntPtr Monitor => Native.ScreenOrPrimary(ScreenId).Handle;
+
+    /// <summary>A dock for another screen.</summary>
+    public DockWindow(string device) : this() { screenDevice = device; }
+
+    /// <summary>For `--dock-screens-test`.</summary>
+    internal string DebugState => $"screen '{ScreenId}', visible {IsVisible}, at {Left:0},{Top:0} {ActualWidth:0}x{ActualHeight:0}, {apps.Count} apps, fullscreen-hidden {fullscreen}";
+
     public DockWindow()
     {
         InitializeComponent();
@@ -150,7 +164,7 @@ public partial class DockWindow : Window
     /// </summary>
     void UpdateDocked(List<AppWindow> windows)
     {
-        var chosen = Native.ScreenOrPrimary(S.DockScreen).Handle;
+        var chosen = Native.ScreenOrPrimary(ScreenId).Handle;
         var primary = chosen != IntPtr.Zero ? chosen : Native.MonitorFromPoint(new Native.POINT(), 1);
         bool want = S.DockReserve && !S.DockAutoHide && S.DockWhenMaximized == "Bar" && windows.Any(w =>
             !Native.IsIconic(w.Hwnd) && Native.IsZoomed(w.Hwnd) && Native.MonitorFromWindow(w.Hwnd, 2) == primary);
@@ -164,7 +178,7 @@ public partial class DockWindow : Window
         if (docked)
         {
             SizeToContent = SizeToContent.Height;
-            Width = Native.ScreenDip(S.DockScreen).Width;
+            Width = Native.ScreenDip(ScreenId).Width;
             Bar.Margin = new Thickness(0);
             Bar.CornerRadius = new CornerRadius(0);
             Bar.Padding = new Thickness(6, S.DockPadding + 4, 6, S.DockPadding + 5);
@@ -272,7 +286,7 @@ public partial class DockWindow : Window
     void Place()
     {
         if (ActualWidth <= 0) return;
-        var screen = Native.ScreenDip(S.DockScreen);
+        var screen = Native.ScreenDip(ScreenId);
         const double gap = 12;
         Left = docked ? screen.Left + (screen.Width - ActualWidth) / 2 : S.DockPosition switch
         {
@@ -340,7 +354,7 @@ public partial class DockWindow : Window
     {
         if (fullscreen) return;
         Native.GetCursorPos(out var pt);
-        var mon = Native.ScreenOrPrimary(S.DockScreen).Bounds;
+        var mon = Native.ScreenOrPrimary(ScreenId).Bounds;
         double scale = Dpi();
         bool atEdge = pt.Y >= mon.Bottom - 2 && pt.X >= mon.Left && pt.X < mon.Right;
         bool overDock = IsMouseOver || pt.Y >= mon.Bottom - (ActualHeight + 6) * scale &&
@@ -402,7 +416,7 @@ public partial class DockWindow : Window
     {
         if (hwnd == IntPtr.Zero || S.DockAutoHide || !S.DockReserve || ActualHeight <= 0) return;
         if (appBarMsg == 0) appBarMsg = Native.RegisterWindowMessage("BrimDockAppBar");
-        var mon = Native.ScreenOrPrimary(S.DockScreen).Bounds;
+        var mon = Native.ScreenOrPrimary(ScreenId).Bounds;
         reservedPx = (int)Math.Ceiling(ActualHeight * Dpi());
         // Straight to Explorer (it owns the work area), not through Brim's own tray window
         DockAppBar.Reserve(hwnd, reservedPx, direct: true, callback: appBarMsg, monitor: mon, alreadyRegistered: appBar);
@@ -426,7 +440,7 @@ public partial class DockWindow : Window
     public void CheckReservation()
     {
         if (hwnd == IntPtr.Zero || S.DockAutoHide || !S.DockReserve || !IsVisible || fullscreen || ActualHeight <= 0) return;
-        var mon = Native.ScreenOrPrimary(S.DockScreen);
+        var mon = Native.ScreenOrPrimary(ScreenId);
         var mi = new Native.MONITORINFO { cbSize = Marshal.SizeOf<Native.MONITORINFO>() };
         if (!Native.GetMonitorInfo(mon.Handle, ref mi)) return;
         int want = (int)Math.Ceiling(ActualHeight * Dpi());
