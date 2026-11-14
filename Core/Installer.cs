@@ -17,7 +17,12 @@ public static class Installer
     const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Brim";
 
     public static string Version => typeof(Installer).Assembly.GetName().Version?.ToString(3) ?? "0";
-    static string CurrentDir => AppContext.BaseDirectory.TrimEnd('\\');
+    // Where Brim.exe itself is. (Not AppContext.BaseDirectory: the single-file release unpacks itself to a temp
+    // folder and reports that, which made the installer copy the unpacked files and leave out Brim.exe.)
+    static string CurrentDir => Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)!.TrimEnd('\\');
+
+    /// <summary>This Brim is one self-contained exe (the download), not a folder of files.</summary>
+    static bool IsSingleFile => !File.Exists(Path.Combine(CurrentDir, "Brim.dll"));
 
     public static bool IsInstalled => File.Exists(Path.Combine(InstallDir, "Brim.exe"));
     public static bool RunningInstalled => string.Equals(CurrentDir, InstallDir, StringComparison.OrdinalIgnoreCase);
@@ -58,7 +63,9 @@ public static class Installer
         {
             var self = Environment.ProcessPath ?? throw new InvalidOperationException("Can't find Brim's own file");
             var deps = Path.Combine(CurrentDir, "Brim.deps.json");
-            if (File.Exists(deps) && File.Exists(Path.Combine(CurrentDir, "Brim.dll")))
+            // Start clean: files from an older or half-finished install could get in the way of this one
+            ClearInstallDir();
+            if (!IsSingleFile && File.Exists(deps))
             {
                 // Brim as a folder of files: copy only Brim's own files (never the rest of the folder it sits in)
                 foreach (var rel in OwnFiles(deps))
@@ -77,6 +84,7 @@ public static class Installer
             }
         }
         var exe = Path.Combine(InstallDir, "Brim.exe");
+        if (!File.Exists(exe)) throw new IOException($"Brim.exe didn't arrive in {InstallDir}");
 
         CreateShortcut(StartMenuLink, exe);
         using (var k = Registry.CurrentUser.CreateSubKey(UninstallKey))
@@ -95,6 +103,16 @@ public static class Installer
         // Keep "start with Windows" pointing at the installed copy
         if (SettingsStore.Current.StartWithWindows) Startup.Set(true, exe);
         return exe;
+    }
+
+    /// <summary>Empty Brim's program folder (only ever %LOCALAPPDATA%\Programs\Brim; settings live elsewhere).</summary>
+    static void ClearInstallDir()
+    {
+        if (!Directory.Exists(InstallDir) || RunningInstalled) return;
+        foreach (var f in Directory.GetFiles(InstallDir, "*", SearchOption.AllDirectories))
+            try { File.SetAttributes(f, FileAttributes.Normal); File.Delete(f); } catch (Exception ex) { Log.Error("install clear " + Path.GetFileName(f), ex); }
+        foreach (var d in Directory.GetDirectories(InstallDir))
+            try { Directory.Delete(d, true); } catch { }
     }
 
     /// <summary>Put Windows back (taskbar, desktop icons, start-up), remove shortcuts and the program files.</summary>

@@ -582,10 +582,12 @@ public partial class App : Application
         }
 
         // Started from a download (not the installed copy): offer to install, or update the installed one
-        if (e.Args.Length == 0 && !Installer.RunningInstalled && !Installer.IsDevCopy)
+        // ("Brim-Setup.exe --install" installs or updates without asking)
+        bool quietInstall = e.Args.Length == 1 && e.Args[0] == "--install";
+        if ((e.Args.Length == 0 || quietInstall) && !Installer.RunningInstalled && !Installer.IsDevCopy)
         {
             bool update = Installer.IsInstalled;
-            var answer = MessageBox.Show(update
+            var answer = quietInstall ? MessageBoxResult.Yes : MessageBox.Show(update
                     ? "Brim is already installed. Update it with this version?"
                     : "Install Brim?\n\nIt will be added to Start and to Settings › Apps (where you can uninstall it). No admin rights needed.",
                 "Brim " + Installer.Version, MessageBoxButton.YesNo, MessageBoxImage.Question);
@@ -595,7 +597,8 @@ public partial class App : Application
                 {
                     if (update) Installer.CloseRunning();
                     var exe = Installer.Install();
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = true });
+                    Log.Note("install", $"{(update ? "updated" : "installed")} {Installer.Version} from {Environment.ProcessPath} → {exe}");
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = true, WorkingDirectory = Installer.InstallDir });
                 }
                 catch (Exception ex)
                 {
@@ -662,7 +665,8 @@ public partial class App : Application
         notch = new NotchWindow();
         notch.Show();
         notch.ContentRendered += (_, _) =>
-            Log.Note("startup", $"on screen {(DateTime.Now - processStart).TotalMilliseconds:0} ms after launch");
+            Log.Note("startup", $"on screen {(DateTime.Now - processStart).TotalMilliseconds:0} ms after launch" +
+                                $" ({(Installer.RunningInstalled ? "installed copy" : "running from " + System.IO.Path.GetDirectoryName(Environment.ProcessPath))})");
 
         ApplyAll();
 
