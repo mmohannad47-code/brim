@@ -94,6 +94,7 @@ public partial class NotchWindow : Window
         ClipboardHistory.Items.CollectionChanged += (_, _) =>
             ClipEmpty.Visibility = ClipboardHistory.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
+        HoverMenu.SetRegion(this, Body); // its menus stay while the pointer is on the notch's card or the menu
         hoverTimer.Tick += (_, _) => { hoverTimer.Stop(); Open(); };
         leaveTimer.Interval = TimeSpan.FromMilliseconds(320);
         leaveTimer.Tick += (_, _) =>

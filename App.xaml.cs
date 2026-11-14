@@ -335,7 +335,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--banners-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -407,6 +407,19 @@ public partial class App : Application
                             sb.AppendLine(Brim.Views.DockWindow.EndTaskTest(list));
                             await System.Threading.Tasks.Task.Delay(500);
                             sb.AppendLine($"throwaway process ended: {dummy.HasExited}; Explorer still running: {System.Diagnostics.Process.GetProcessesByName("explorer").Length > 0}; your Brim still running: {mainBrim == null || !mainBrim.HasExited}");
+                            break;
+                        }
+                        case "--dock-apps-test":
+                        {
+                            SettingsStore.Load(); S.DockReserve = false; S.DockAutoHide = false; // (read-only)
+                            ThemeManager.Apply();
+                            var d = new Brim.Views.DockWindow { Left = -4000 };
+                            d.Show();
+                            await System.Threading.Tasks.Task.Delay(2000);
+                            d.RefreshApps();
+                            sb.AppendLine(d.DebugApps);
+                            sb.AppendLine("pins after healing: " + string.Join(" ; ", S.DockPins.Select(p => p.Name + " -> " + p.Path)));
+                            d.Close();
                             break;
                         }
                         case "--mirror-test":
@@ -734,6 +747,7 @@ public partial class App : Application
         EventManager.RegisterClassHandler(typeof(System.Windows.Controls.ScrollViewer), UIElement.PreviewMouseWheelEvent,
             new System.Windows.Input.MouseWheelEventHandler(ProportionalWheel));
         HoverTip.Install();
+        HoverMenu.Install(); // every menu closes itself once the pointer has left it and what it came from
         AppDomain.CurrentDomain.UnhandledException += (_, ex) =>
         {
             Log.Error("fatal", (Exception)ex.ExceptionObject);

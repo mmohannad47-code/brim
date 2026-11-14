@@ -100,6 +100,9 @@ public partial class DockWindow : Window
     /// <summary>A dock for another screen.</summary>
     public DockWindow(string device) : this() { screenDevice = device; }
 
+    /// <summary>For `--dock-apps-test`: every icon on the dock.</summary>
+    internal string DebugApps => string.Join("\n", apps.Select(a => $"{a.Title} | pinned {a.Pinned} | running {a.Running} ({a.Windows.Count} windows) | {a.Key}"));
+
     /// <summary>For `--dock-screens-test`.</summary>
     internal string DebugState => $"screen '{ScreenId}', visible {IsVisible}, at {Left:0},{Top:0} {ActualWidth:0}x{ActualHeight:0}, {apps.Count} apps, fullscreen-hidden {fullscreen}";
 
@@ -469,7 +472,113 @@ public partial class DockWindow : Window
 
     // ------------------------------------------------------------------ apps
 
-    static string KeyFor(string? path) => (path ?? "").ToLowerInvariant();
+    /// <summary>
+    /// How the dock recognises an app: its exe, ignoring version folders, so apps that update themselves into a new
+    /// folder each time (Discord's app-1.0.9268, Slack…) still match their pin.
+    /// </summary>
+    static string KeyFor(string? path)
+    {
+        var p = (path ?? "").ToLowerInvariant();
+        p = System.Text.RegularExpressions.Regex.Replace(p, @"\\app-\d+(\.\d+)+\\", "\\");
+        p = System.Text.RegularExpressions.Regex.Replace(p, @"\\\d+(\.\d+){1,3}\\", "\\");
+        return p;
+    }
+
+    static readonly System.Text.RegularExpressions.Regex HelperExe =
+        new(@"(?i)(webhelper|helper|renderer|browsersubprocess|cefsharp|crashpad_handler)[^\\]*\.exe$");
+
+    /// <summary>
+    /// The app a helper process belongs to (Steam's windows are drawn by steamwebhelper.exe): the exe named after a
+    /// folder above it (Steam\steam.exe), else the process that started it. Anything else is its own app.
+    /// </summary>
+    static string OwningApp(string exe, uint pid)
+    {
+        if (!HelperExe.IsMatch(exe)) return exe;
+        if (owners.TryGetValue(exe + "|" + pid, out var known)) return known;
+        string result = AppAbove(exe) ?? ParentApp(pid) ?? exe;
+        owners[exe + "|" + pid] = result;
+        return result;
+    }
+
+    static readonly Dictionary<string, string> owners = new(StringComparer.OrdinalIgnoreCase);
+
+    static string? AppAbove(string exe)
+    {
+        var dir = System.IO.Path.GetDirectoryName(exe);
+        for (int i = 0; i < 4 && dir != null && dir.Length > 3; i++)
+        {
+            var candidate = System.IO.Path.Combine(dir, System.IO.Path.GetFileName(dir) + ".exe");
+            if (System.IO.File.Exists(candidate) && !HelperExe.IsMatch(candidate)) return candidate;
+            dir = System.IO.Path.GetDirectoryName(dir);
+        }
+        return null;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct PROCESS_BASIC_INFORMATION { public IntPtr ExitStatus, Peb, Affinity, Priority, UniqueId, ParentId; }
+    [System.Runtime.InteropServices.DllImport("ntdll.dll")]
+    static extern int NtQueryInformationProcess(IntPtr process, int cls, ref PROCESS_BASIC_INFORMATION info, int size, out int returned);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+
+    static string? ParentApp(uint pid)
+    {
+        var h = OpenProcess(0x1000 /* query limited */, false, pid);
+        if (h == IntPtr.Zero) return null;
+        try
+        {
+            var info = new PROCESS_BASIC_INFORMATION();
+            if (NtQueryInformationProcess(h, 0, ref info, System.Runtime.InteropServices.Marshal.SizeOf(info), out _) != 0) return null;
+            var parent = Native.ProcessPath((uint)info.ParentId.ToInt64());
+            return parent != null && !HelperExe.IsMatch(parent) &&
+                   !System.Text.RegularExpressions.Regex.IsMatch(System.IO.Path.GetFileName(parent), @"(?i)^(explorer|svchost|services|sihost)\.exe$") ? parent : null;
+        }
+        finally { CloseHandle(h); }
+    }
+
+    /// <summary>A pinned exe whose version folder is gone (the app updated): the same exe in its newest version folder.</summary>
+    static string? NewestVersionOf(string exe)
+    {
+        try
+        {
+            var versionDir = System.IO.Path.GetDirectoryName(exe);
+            var root = versionDir == null ? null : System.IO.Path.GetDirectoryName(versionDir);
+            if (root == null || !System.IO.Directory.Exists(root)) return null;
+            var name = System.IO.Path.GetFileName(exe);
+            return System.IO.Directory.GetDirectories(root)
+                .Where(d => System.Text.RegularExpressions.Regex.IsMatch(System.IO.Path.GetFileName(d), @"^(app-)?\d+(\.\d+)+$"))
+                .Select(d => System.IO.Path.Combine(d, name)).Where(System.IO.File.Exists)
+                .OrderByDescending(p => Version.TryParse(System.Text.RegularExpressions.Regex.Match(p, @"\d+(\.\d+)+").Value, out var v) ? v : new Version())
+                .FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Keep pins pointing at the real app: past a self-update, and away from helper processes.</summary>
+    void HealPins(List<(string key, List<AppWindow> wins)> groups)
+    {
+        bool changed = false;
+        foreach (var pin in S.DockPins)
+        {
+            if (!pin.Path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
+            string? better = null;
+            if (HelperExe.IsMatch(pin.Path)) better = AppAbove(pin.Path);                      // pinned Steam's helper
+            if (better == null)
+            {
+                // The app updated: the running copy, or the newest version folder
+                var running = groups.FirstOrDefault(g => g.key == KeyFor(pin.Path)).wins?.FirstOrDefault()?.ExePath;
+                if (running != null && HelperExe.IsMatch(running) == false && !string.Equals(running, pin.Path, StringComparison.OrdinalIgnoreCase)) better = running;
+                else if (!System.IO.File.Exists(pin.Path)) better = NewestVersionOf(pin.Path);
+            }
+            if (better == null || string.Equals(better, pin.Path, StringComparison.OrdinalIgnoreCase)) continue;
+            Log.Note("dock", $"pin '{pin.Name}' now points at {better}");
+            pinTargets.Remove(pin.Path);
+            pin.Path = better;
+            if (HelperExe.IsMatch(pin.Name) || pin.Name.Contains("Helper", StringComparison.OrdinalIgnoreCase)) pin.Name = IconHelper.NiceName(better);
+            changed = true;
+        }
+        if (changed) SettingsStore.Save();
+    }
 
     string? PinTarget(ShortcutItem pin)
     {
@@ -497,12 +606,15 @@ public partial class DockWindow : Window
         foreach (var w in windows)
         {
             bool hosted = w.ExePath != null && w.ExePath.EndsWith("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase);
+            // Windows drawn by a helper process count as the app it belongs to (Steam, not steamwebhelper)
+            if (!hosted && w.ExePath != null) w.ExePath = OwningApp(w.ExePath, w.Pid);
             string key = hosted || w.ExePath == null ? "hwnd:" + w.Hwnd : KeyFor(w.ExePath);
             var g = groups.FirstOrDefault(x => x.key == key);
             if (g.wins == null) groups.Add((key, new List<AppWindow> { w }));
             else g.wins.Add(w);
         }
 
+        HealPins(groups);
         foreach (var pin in S.DockPins)
         {
             var target = PinTarget(pin);
@@ -787,19 +899,8 @@ public partial class DockWindow : Window
         if (menu.Items.Count == 0) return;
         IsAnyMenuOpen = true;
         var tile = (UIElement)sender;
-        // Like a hover menu: once the pointer has left both the app and the menu for a moment, it closes itself
-        var away = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
-        var opened = DateTime.Now;
-        int outside = 0;
-        away.Tick += (_, _) =>
-        {
-            if (!menu.IsOpen) { away.Stop(); return; }
-            if (DateTime.Now - opened < TimeSpan.FromMilliseconds(400)) return;
-            outside = menu.IsMouseOver || tile.IsMouseOver ? 0 : outside + 1;
-            if (outside >= 4) { away.Stop(); menu.IsOpen = false; } // about 0.4 s away
-        };
-        menu.Opened += (_, _) => away.Start();
-        menu.Closed += (_, _) => { IsAnyMenuOpen = false; away.Stop(); };
+        HoverMenu.SetOwner(menu, (FrameworkElement)tile); // closes itself once the pointer leaves the app and the menu
+        menu.Closed += (_, _) => IsAnyMenuOpen = false;
         menu.PlacementTarget = tile;
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
         menu.IsOpen = true;
@@ -818,7 +919,13 @@ public partial class DockWindow : Window
             Native.GetWindowThreadProcessId(inner, out uint p);
             return (int)p;
         }
-        return app.Windows.Select(RealPid).Where(pid => pid > 4 && pid != mine).Distinct()
+        // A window drawn by a helper (Steam's): the app itself too, or it would just start the helper again
+        var owners = app.Windows.Where(w => w.ExePath != null && !string.Equals(Native.ProcessPath(w.Pid), w.ExePath, StringComparison.OrdinalIgnoreCase))
+            .Select(w => w.ExePath!).Distinct(StringComparer.OrdinalIgnoreCase)
+            .SelectMany(path => System.Diagnostics.Process.GetProcessesByName(System.IO.Path.GetFileNameWithoutExtension(path))
+                .Where(p => string.Equals(Native.ProcessPath((uint)p.Id), path, StringComparison.OrdinalIgnoreCase)).Select(p => p.Id))
+            .ToList();
+        return app.Windows.Select(RealPid).Concat(owners).Where(pid => pid > 4 && pid != mine).Distinct()
             .Where(pid => !System.Text.RegularExpressions.Regex.IsMatch(
                 System.IO.Path.GetFileName(Native.ProcessPath((uint)pid) ?? ""),
                 @"(?i)^(brim|explorer|applicationframehost|csrss|dwm|winlogon|lsass|services|svchost|sihost|shellexperiencehost|startmenuexperiencehost|searchhost|textinputhost|systemsettings)\.exe$"))
