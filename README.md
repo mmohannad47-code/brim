@@ -20,7 +20,9 @@ Settings open on the first run so you can pick what you want. Nothing about your
 
 ### Update
 
-Download the newer `Setup.exe` and run it. Brim asks *"Update it with this version?"*: click **Yes**. Your settings, notes and widgets are kept.
+Brim updates itself (from 0.6.0 on): it downloads new versions in the background and the notch pops up *"Brim x is ready"*. Click it to restart into the new version. You can also check in **Settings › General › Updates**, or turn automatic updates off there. Your settings, notes and widgets are always kept.
+
+Coming from 0.5.x? Download the newest `Setup.exe` once and run it (click **Yes** to update); after that, updates come by themselves.
 
 ### Uninstall
 
@@ -39,16 +41,16 @@ The small pill at the top of the screen. **Point at it** (or press **Ctrl+Alt+N*
 | **Home** | What's playing (Spotify, YouTube, any app with media controls) with cover art, a seek bar and controls, plus the date, CPU, memory, connected devices' batteries and volume. |
 | **Shortcuts** | Up to 12 apps, folders or websites. Drag an app onto the notch to add it; right-click to remove. The first 9 open with **Ctrl+Alt+1…9**. |
 | **Games** | Every game you have installed, with cover art: Steam, Epic, GOG, Riot, EA, Ubisoft, Battle.net, Xbox, and game folders on any drive. New installs appear by themselves. Right-click a game to launch with DirectX/Vulkan, pick a different exe, change the cover or uninstall it. |
-| **Messages** | Notifications from Discord, Teams, Outlook, WhatsApp and other chat and mail apps. Click one to open it; right-click to mute a person or app. |
+| **Messages** | Notifications from Discord, Teams, Outlook, WhatsApp and other chat and mail apps. Click one to open it; right-click to mute a person or app. Turn on **Settings › Messages › Only pop up in the notch** to stop Windows' own corner pop-up for those apps. |
 | **Notes** | A page to type anything. Saves as you type. |
 | **Shelf** | Drop files on the notch to park them, then drag them out later. |
 | **Clipboard** | The last 40 things you copied. Click to copy again. |
 | **Controls** | Wi-Fi, Bluetooth, mic, volume, output device and brightness. |
 | **Timer** | A focus timer; the notch counts down and pops out when time's up. |
 
-Choose which tabs to show, and their order, in **Settings › Notch**. The notch can sit at the left, centre or right, look like a notch or a floating island, and hides itself in fullscreen games and videos.
+Choose which tabs to show, and their order, in **Settings › Notch**. The notch can sit at the left, centre or right, look like a notch or a floating island, and hides itself in fullscreen games and videos. With more than one monitor, **Settings › Notch › Screen › Every screen** puts a notch on each of them.
 
-It also pops out briefly for song changes, new messages, volume, charging and headphones connecting.
+It also pops out briefly for song changes, new messages, muting or unmuting your sound or mic, charging and headphones connecting.
 
 ### The dock (optional taskbar replacement)
 
