@@ -88,8 +88,10 @@ public sealed class WindowPreview : Window
             head.Children.Add(close);
             stack.Children.Add(head);
 
-            // Windows draws the live picture into this area
-            var slot = new Border { Width = 260, Height = 165, CornerRadius = new CornerRadius(4) };
+            // Windows draws the live picture into this area, shaped like the window (tall ones like a friends list
+            // get a tall preview instead of a thin strip in a wide box)
+            var (sw, sh) = SlotFor(w.Hwnd);
+            var slot = new Border { Width = sw, Height = sh, CornerRadius = new CornerRadius(4) };
             stack.Children.Add(slot);
 
             card.Child = stack;
@@ -121,6 +123,36 @@ public sealed class WindowPreview : Window
             foreach (var (_, _, t) in items) if (t != IntPtr.Zero) DwmUnregisterThumbnail(t);
             if (current == this) current = null;
         };
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct WINDOWPLACEMENT { public int length, flags, showCmd; public Native.POINT min, max; public Native.RECT normal; }
+    [DllImport("user32.dll")] static extern bool GetWindowPlacement(IntPtr h, ref WINDOWPLACEMENT p);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out Native.RECT r, int size);
+
+    /// <summary>Preview size (DIPs) with the same shape as the window: up to 260 wide or 300 tall, never too narrow for its title.</summary>
+    static (double w, double h) SlotFor(IntPtr hwnd)
+    {
+        double aspect = 16.0 / 10;
+        try
+        {
+            Native.RECT r;
+            if (Native.IsIconic(hwnd))
+            {
+                // Minimised: the size it has when restored
+                var p = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
+                GetWindowPlacement(hwnd, ref p);
+                r = p.normal;
+            }
+            else if (DwmGetWindowAttribute(hwnd, 9 /* extended frame bounds */, out r, Marshal.SizeOf<Native.RECT>()) != 0)
+                Native.GetWindowRect(hwnd, out r);
+            double w = r.Right - r.Left, h = r.Bottom - r.Top;
+            if (w > 50 && h > 50) aspect = w / h;
+        }
+        catch { }
+        if (aspect >= 1.2) return (260, Math.Clamp(260 / aspect, 110, 165));   // wide: as before
+        double width = Math.Clamp(240 * aspect, 130, 260);                    // tall or square
+        return (width, Math.Clamp(width / aspect, 150, 300));
     }
 
     static bool IsInside(DependencyObject d, DependencyObject target)
@@ -165,6 +197,16 @@ public sealed class WindowPreview : Window
     {
         var all = WindowTracker.TaskbarWindows();
         var win = all.FirstOrDefault(w => Native.IsIconic(w.Hwnd)) ?? all.FirstOrDefault();
+        Window? tall = null;
+        if (Environment.GetEnvironmentVariable("BRIM_PREVIEW_TALL") == "1")
+        {
+            // A tall window shaped like a friends list, to check the preview keeps its shape
+            tall = new Window { Title = "Friends (test)", Width = 300, Height = 720, Left = 40, Top = 40, ShowActivated = false, Background = new LinearGradientBrush(Colors.SteelBlue, Colors.MidnightBlue, 90) };
+            tall.Content = new TextBlock { Text = "Friends\n\nAlex\nSam\nJordan\nTaylor", Foreground = Brushes.White, FontSize = 22, Margin = new Thickness(20) };
+            tall.Show();
+            await System.Threading.Tasks.Task.Delay(400);
+            win = new AppWindow { Hwnd = new WindowInteropHelper(tall).Handle, Title = tall.Title };
+        }
         if (win == null) { System.IO.File.WriteAllText(png + ".txt", "no window"); return; }
         var app = new DockApp { Key = "test", Title = win.Title, Icon = win.ExePath != null ? IconHelper.ForPath(win.ExePath) : null, Windows = new List<AppWindow> { win } };
         var host = new Window { WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = Brushes.Transparent, ShowInTaskbar = false, Topmost = true, ShowActivated = false, Width = 40, Height = 40 };
@@ -188,6 +230,7 @@ public sealed class WindowPreview : Window
         await System.Threading.Tasks.Task.Delay(2500); // time for the screenshot
         HideNow();
         host.Close();
+        tall?.Close();
     }
 
     void Place()
