@@ -89,6 +89,7 @@ public sealed class TrayIcon : IDisposable
                 app.RefreshSettingsWindow();
             }));
         menu.Items.Add(Item("Quit Brim", () => app.Quit()));
+        Brim.Views.Flyout.CloseBrimMenus = () => menu.IsOpen = false; // the tray panel closes it when you move away
         menu.Opened += (_, _) =>
         {
             // A popup only closes on outside clicks when its window is in front

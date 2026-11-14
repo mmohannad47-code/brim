@@ -335,7 +335,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--banners-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--banners-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -396,7 +396,20 @@ public partial class App : Application
                             sb.AppendLine("back: other " + d2.DebugState);
                             d1.Close(); d2.Close();
                             break;
-                        }                        case "--mirror-test":
+                        }                        case "--endtask-test":
+                        {
+                            var dummy = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("powershell.exe", "-NoProfile -WindowStyle Hidden -Command Start-Sleep 120") { CreateNoWindow = true, UseShellExecute = false })!;
+                            await System.Threading.Tasks.Task.Delay(800);
+                            Native.GetWindowThreadProcessId(Native.ExplorerTray(), out uint explorerPid); // (the real one: Brim's stand-in answers FindWindow first)
+                            var mainBrim = System.Diagnostics.Process.GetProcessesByName("Brim").FirstOrDefault(x => x.Id != Environment.ProcessId);
+                            var list = new System.Collections.Generic.List<AppWindow> { new() { Pid = (uint)dummy.Id, ExePath = Native.ProcessPath((uint)dummy.Id) }, new() { Pid = explorerPid, ExePath = Native.ProcessPath(explorerPid) }, new() { Pid = (uint)Environment.ProcessId, ExePath = Environment.ProcessPath } };
+                            if (mainBrim != null) list.Add(new() { Pid = (uint)mainBrim.Id, ExePath = Native.ProcessPath((uint)mainBrim.Id) });
+                            sb.AppendLine(Brim.Views.DockWindow.EndTaskTest(list));
+                            await System.Threading.Tasks.Task.Delay(500);
+                            sb.AppendLine($"throwaway process ended: {dummy.HasExited}; Explorer still running: {System.Diagnostics.Process.GetProcessesByName("explorer").Length > 0}; your Brim still running: {mainBrim == null || !mainBrim.HasExited}");
+                            break;
+                        }
+                        case "--mirror-test":
                             ThemeManager.Apply();
                             var main = new Brim.Views.NotchWindow { Left = -4000 };
                             main.Show();

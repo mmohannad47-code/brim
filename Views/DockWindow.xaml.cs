@@ -780,12 +780,75 @@ public partial class DockWindow : Window
             {
                 foreach (var w in app.Windows) Native.PostMessage(w.Hwnd, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
             }));
+        // End task, like Windows 11's taskbar: stops the app straight away (for one that's stuck or won't close)
+        var targets = EndTaskTargets(app);
+        if (targets.Count > 0)
+            menu.Items.Add(Item("End task", () => EndTask(app, targets)));
         if (menu.Items.Count == 0) return;
         IsAnyMenuOpen = true;
-        menu.Closed += (_, _) => IsAnyMenuOpen = false;
-        menu.PlacementTarget = (UIElement)sender;
+        var tile = (UIElement)sender;
+        // Like a hover menu: once the pointer has left both the app and the menu for a moment, it closes itself
+        var away = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        var opened = DateTime.Now;
+        int outside = 0;
+        away.Tick += (_, _) =>
+        {
+            if (!menu.IsOpen) { away.Stop(); return; }
+            if (DateTime.Now - opened < TimeSpan.FromMilliseconds(400)) return;
+            outside = menu.IsMouseOver || tile.IsMouseOver ? 0 : outside + 1;
+            if (outside >= 4) { away.Stop(); menu.IsOpen = false; } // about 0.4 s away
+        };
+        menu.Opened += (_, _) => away.Start();
+        menu.Closed += (_, _) => { IsAnyMenuOpen = false; away.Stop(); };
+        menu.PlacementTarget = tile;
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
         menu.IsOpen = true;
+    }
+
+    /// <summary>The processes behind an app's windows that End task may stop (never Windows' own or Brim).</summary>
+    static List<int> EndTaskTargets(DockApp app)
+    {
+        var mine = Environment.ProcessId;
+        // Store apps live inside a Windows host window: the real app is the one drawing inside it
+        int RealPid(AppWindow w)
+        {
+            if (!string.Equals(System.IO.Path.GetFileName(w.ExePath ?? ""), "ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase)) return (int)w.Pid;
+            var inner = Native.FindWindowEx(w.Hwnd, IntPtr.Zero, "Windows.UI.Core.CoreWindow", null);
+            if (inner == IntPtr.Zero) return 0;
+            Native.GetWindowThreadProcessId(inner, out uint p);
+            return (int)p;
+        }
+        return app.Windows.Select(RealPid).Where(pid => pid > 4 && pid != mine).Distinct()
+            .Where(pid => !System.Text.RegularExpressions.Regex.IsMatch(
+                System.IO.Path.GetFileName(Native.ProcessPath((uint)pid) ?? ""),
+                @"(?i)^(brim|explorer|applicationframehost|csrss|dwm|winlogon|lsass|services|svchost|sihost|shellexperiencehost|startmenuexperiencehost|searchhost|textinputhost|systemsettings)\.exe$"))
+            .ToList();
+    }
+
+    /// <summary>For `--endtask-test`: which of these would End task stop, then stop them.</summary>
+    internal static string EndTaskTest(List<AppWindow> windows)
+    {
+        var app = new DockApp { Key = "test", Title = "test", Windows = windows };
+        var t = EndTaskTargets(app);
+        var said = "would end: " + string.Join(", ", t.Select(p => System.IO.Path.GetFileName(Native.ProcessPath((uint)p) ?? p.ToString())));
+        // Never actually end Brim or Explorer in a test, even if the rules above were wrong
+        if (t.Any(p => System.Text.RegularExpressions.Regex.IsMatch(System.IO.Path.GetFileName(Native.ProcessPath((uint)p) ?? ""), @"(?i)^(brim|explorer)\.exe$"))) return "FAIL " + said;
+        EndTask(app, t);
+        return said;
+    }
+
+    static void EndTask(DockApp app, List<int> pids)
+    {
+        foreach (var pid in pids)
+        {
+            try
+            {
+                using var p = System.Diagnostics.Process.GetProcessById(pid);
+                p.Kill(entireProcessTree: true);
+                Log.Note("dock", $"ended {System.IO.Path.GetFileName(Native.ProcessPath((uint)pid) ?? "?")} ({app.Title})");
+            }
+            catch (Exception ex) { Log.Note("dock", $"couldn't end {app.Title}: {ex.Message}"); }
+        }
     }
 
     static MenuItem Item(string header, Action action)

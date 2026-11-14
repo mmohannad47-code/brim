@@ -41,9 +41,10 @@ public sealed class Flyout : Window
         bool sawMenu = false;
         int goneTicks = 0;
         var me = new WindowInteropHelper(this).Handle;
-        // The app's pop-up windows before the click: anything new after it is its menu, even when it isn't the
-        // focused window (some apps' menus never take focus)
-        baseline = PopupsOf(pid);
+        menuOwner = owner;
+        // Every pop-up window on screen before the click: anything new after it is the app's menu, even when it
+        // isn't focused or comes from a helper process (Steam draws its menu in steamwebhelper.exe)
+        baseline = Popups();
         holdTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         holdTimer.Tick += (_, _) =>
         {
@@ -63,16 +64,15 @@ public sealed class Flyout : Window
     }
 
     HashSet<IntPtr> baseline = new();
+    IntPtr menuOwner;
 
-    /// <summary>The app's visible pop-up windows (no title bar): where its own drawn menus live.</summary>
-    static HashSet<IntPtr> PopupsOf(uint pid)
+    /// <summary>Every visible pop-up window (no title bar) on screen: where apps' own drawn menus live.</summary>
+    static HashSet<IntPtr> Popups()
     {
         var set = new HashSet<IntPtr>();
         Native.EnumWindows((h, _) =>
         {
             if (!Native.IsWindowVisible(h)) return true;
-            Native.GetWindowThreadProcessId(h, out uint p);
-            if (p != pid) return true;
             long style = Native.GetWindowLongPtr(h, -16).ToInt64();
             if ((style & 0x80000000L) != 0 && (style & 0x00C00000L) != 0x00C00000L) set.Add(h);
             return true;
@@ -80,13 +80,21 @@ public sealed class Flyout : Window
         return set;
     }
 
+    /// <summary>The menu(s) opened from this panel: a standard Windows menu, or pop-ups that appeared after the click.</summary>
+    List<IntPtr> MenuWindows(IntPtr me)
+    {
+        var list = new List<IntPtr>();
+        var m = Native.FindWindow("#32768", null);
+        if (m != IntPtr.Zero && Native.IsWindowVisible(m)) list.Add(m);
+        if (holdForMenu)
+            foreach (var h in Popups()) if (h != me && !baseline.Contains(h) && !list.Contains(h)) list.Add(h);
+        return list;
+    }
+
     /// <summary>A standard Windows menu, or the app's own popup (apps that draw their own menus), is on screen.</summary>
     bool MenuShowing(uint pid, IntPtr owner, IntPtr me)
     {
-        var m = Native.FindWindow("#32768", null);
-        if (m != IntPtr.Zero && Native.IsWindowVisible(m)) return true;
-        // A pop-up window the app opened after the click (its own menu, focused or not)
-        foreach (var h in PopupsOf(pid)) if (h != me && !baseline.Contains(h)) return true;
+        if (MenuWindows(me).Count > 0) return true;
         var fg = Native.GetForegroundWindow();
         if (fg == IntPtr.Zero || fg == owner || fg == me || !Native.IsWindowVisible(fg)) return false;
         Native.GetWindowThreadProcessId(fg, out uint fgPid);
@@ -144,6 +152,7 @@ public sealed class Flyout : Window
             Activate();
             var h = new WindowInteropHelper(this).Handle;
             if (Native.GetForegroundWindow() != h) Native.ForceForeground(h);
+            if (kind == "tray") StartHoverClose(h);
         };
         // Growing (e.g. opening the mixer) re-anchors the panel above its button instead of spilling downwards
         SizeChanged += (_, _) => { if (IsLoaded) Place(); };
@@ -161,6 +170,60 @@ public sealed class Flyout : Window
     }
 
     bool closing;
+
+    /// <summary>
+    /// The tray panel works like a hover menu: it stays while the pointer is on it, on its dock button or on a menu
+    /// opened from it, and goes away (with that menu) about half a second after the pointer leaves all of them.
+    /// </summary>
+    void StartHoverClose(IntPtr me)
+    {
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        var openedAt = DateTime.Now;
+        bool entered = false;
+        int away = 0;
+        timer.Tick += (_, _) =>
+        {
+            if (closing || open != this) { timer.Stop(); return; }
+            Native.GetCursorPos(out var pt);
+            bool Inside(IntPtr w) => Native.GetWindowRect(w, out var r) && pt.X >= r.Left && pt.X < r.Right && pt.Y >= r.Top && pt.Y < r.Bottom;
+            bool overPanel = Inside(me);
+            bool overButton = false;
+            if (PresentationSource.FromVisual(anchor) != null)
+            {
+                var tl = anchor.PointToScreen(new Point(0, 0));
+                var br = anchor.PointToScreen(new Point(anchor.ActualWidth, anchor.ActualHeight));
+                overButton = pt.X >= tl.X && pt.X < br.X && pt.Y >= tl.Y && pt.Y < br.Y;
+            }
+            var menus = MenuWindows(me);
+            bool overMenu = menus.Any(Inside);
+            if (overPanel || overMenu) entered = true;
+            // Until the pointer has reached the panel once, give it a moment to get there
+            if (overPanel || overButton || overMenu || (!entered && DateTime.Now - openedAt < TimeSpan.FromSeconds(2))) { away = 0; return; }
+            if (++away < 5) return; // about half a second away from all of them
+            timer.Stop();
+            CloseMenus(menus);
+            SafeClose();
+        };
+        timer.Start();
+    }
+
+    /// <summary>Close the menus opened from this panel (an app's menu doesn't close by itself when the panel goes).</summary>
+    void CloseMenus(List<IntPtr> menus)
+    {
+        if (menus.Count == 0) return;
+        if (menuOwner != IntPtr.Zero) Native.PostMessage(menuOwner, 0x001F /* WM_CANCELMODE: ends a Windows menu */, IntPtr.Zero, IntPtr.Zero);
+        foreach (var m in menus)
+        {
+            Native.GetWindowThreadProcessId(m, out uint p);
+            if (p == Environment.ProcessId) continue; // Brim's own menu closes when it loses the pointer
+            Native.PostMessage(m, 0x0100 /* WM_KEYDOWN */, new IntPtr(0x1B), IntPtr.Zero); // Esc, which every menu understands
+            Native.PostMessage(m, 0x0101 /* WM_KEYUP */, new IntPtr(0x1B), IntPtr.Zero);
+        }
+        CloseBrimMenus?.Invoke();
+    }
+
+    /// <summary>Closes Brim's own tray menu if it's open (set by the tray icon).</summary>
+    public static Action? CloseBrimMenus;
 
     void SafeClose()
     {
@@ -618,9 +681,10 @@ public sealed class TrayPanel : StackPanel
                 Native.AllowSetForegroundWindow(item.Pid);
                 if (right && item.Pid == Environment.ProcessId)
                 {
-                    // Brim's own icon: close this panel, then open Brim's menu just like its real tray icon does
-                    Flyout.CloseOpen();
-                    await System.Threading.Tasks.Task.Delay(150);
+                    // Brim's own icon: open Brim's menu directly (like its real tray icon), with this panel kept
+                    // open behind it like the other apps' menus
+                    Flyout.HoldForMenu(new IntPtr(item.HWnd), item.Pid);
+                    await System.Threading.Tasks.Task.Delay(30);
                     ((App)Application.Current).ShowTrayMenu();
                     return;
                 }

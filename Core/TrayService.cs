@@ -45,6 +45,7 @@ public sealed class TrayService : IDisposable
     public static int IconMessages;
     static readonly uint taskbarCreated = Native.RegisterWindowMessage("TaskbarCreated");
     readonly System.Collections.Generic.Dictionary<TrayIconItem, IntPtr> pendingIcons = new();
+    readonly System.Collections.Generic.Dictionary<(uint, uint, Guid), uint> pendingVersions = new();
     System.Windows.Threading.DispatcherTimer? iconTimer;
 
     System.Windows.Threading.DispatcherTimer MakeIconTimer()
@@ -265,6 +266,7 @@ public sealed class TrayService : IDisposable
                         if (n.hWnd == 0) return;
                         Native.GetWindowThreadProcessId(new IntPtr(n.hWnd), out uint pid);
                         existing = new TrayIconItem { HWnd = n.hWnd, UID = n.uID, Guid = guid, Pid = pid };
+                        if (pendingVersions.Remove((n.hWnd, n.uID, guid), out var v)) existing.Version = v;
                         Icons.Add(existing);
                     }
                     if ((n.uFlags & 0x1) != 0) existing.Callback = n.uCallbackMessage;
@@ -307,6 +309,11 @@ public sealed class TrayService : IDisposable
                     break;
                 case 4: // NIM_SETVERSION
                     if (existing != null) existing.Version = n.uVersion;
+                    else
+                    {
+                        // Announced before the icon itself arrived: keep it for when it does
+                        pendingVersions[(n.hWnd, n.uID, guid)] = n.uVersion;
+                    }
                     break;
             }
         }
@@ -318,11 +325,16 @@ public sealed class TrayService : IDisposable
     {
         var owner = new IntPtr(icon.HWnd);
         if (!Native.IsWindow(owner)) { Instance?.Icons.Remove(icon); return; }
-        Native.AllowSetForegroundWindow(icon.Pid);
+        bool allowed = Native.AllowSetForegroundWindow(icon.Pid);
         // Give the app's own (hidden) tray window focus first, like Windows' taskbar does. Apps show their menu
         // with TrackPopupMenu, which closes the menu straight away if their window isn't the focused one.
         Native.ForceForeground(owner);
+        bool front = Native.GetForegroundWindow() == owner;
         Native.GetCursorPos(out var pt);
+        Native.GetWindowThreadProcessId(owner, out uint ownerPid);
+        Log.Note("tray", $"{(right ? "right" : doubleClick ? "double" : "left")}-click on '{icon.Tip.Split('\n')[0]}' " +
+            $"({System.IO.Path.GetFileName(Native.ProcessPath(ownerPid) ?? "?")}, format v{icon.Version}, id {icon.UID}{(icon.Guid != Guid.Empty ? ", by guid" : "")}, " +
+            $"window {Native.ClassOf(owner)}, allowed to come forward {allowed}, its window in front {front}, at {pt.X},{pt.Y})");
 
         void Send(int mouseMsg)
         {
