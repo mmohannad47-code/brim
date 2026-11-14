@@ -67,18 +67,23 @@ public sealed class WindowPreview : Window
         UseLayoutRounding = true;
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6) };
-        foreach (var w in app.Windows.GetRange(0, Math.Min(app.Windows.Count, 5)))
+        var shown = app.Windows.GetRange(0, Math.Min(app.Windows.Count, 5));
+        var sizes = SlotsFor(shown.Select(x => x.Hwnd).ToList());
+        for (int n = 0; n < shown.Count; n++)
         {
+            var w = shown[n];
             var win = w;
-            var card = new Border { CornerRadius = new CornerRadius(8), Padding = new Thickness(8), Background = Brushes.Transparent, Cursor = Cursors.Hand };
+            var (sw, sh) = sizes[n];
+            var card = new Border { CornerRadius = new CornerRadius(8), Padding = new Thickness(8), Background = Brushes.Transparent, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Top };
             var stack = new StackPanel();
 
-            var head = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+            // The title row is exactly as wide as the picture (long titles are trimmed), so the card hugs the picture
+            var head = new Grid { Margin = new Thickness(0, 0, 0, 6), Width = sw };
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             head.ColumnDefinitions.Add(new ColumnDefinition());
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             if (app.Icon != null) head.Children.Add(new Image { Source = app.Icon, Width = 16, Height = 16, Margin = new Thickness(0, 0, 8, 0) });
-            var title = new TextBlock { Text = w.Title, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 200 };
+            var title = new TextBlock { Text = w.Title, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(title, 1);
             head.Children.Add(title);
             var close = new Button { Content = "", Width = 22, Height = 22, FontSize = 10, ToolTip = "Close window" };
@@ -90,8 +95,7 @@ public sealed class WindowPreview : Window
 
             // Windows draws the live picture into this area, shaped like the window (tall ones like a friends list
             // get a tall preview instead of a thin strip in a wide box)
-            var (sw, sh) = SlotFor(w.Hwnd);
-            var slot = new Border { Width = sw, Height = sh, CornerRadius = new CornerRadius(4) };
+            var slot = new Border { Width = sw, Height = sh };
             stack.Children.Add(slot);
 
             card.Child = stack;
@@ -177,16 +181,32 @@ public sealed class WindowPreview : Window
     }
 
     /// <summary>
-    /// Preview size (DIPs), exactly the window's shape so the picture fills it edge to edge: 260 wide for wide windows,
-    /// 300 tall for tall ones, and never too narrow for the title above it.
+    /// Preview sizes (DIPs), each exactly its window's shape so the picture fills it edge to edge.
+    /// One window: 260 wide if it's wide, 300 tall if it's tall. Several (Steam's main window and its friends list):
+    /// all the same height, like Windows' own previews, each as wide as its shape needs.
     /// </summary>
-    static (double w, double h) SlotFor(IntPtr hwnd)
+    static List<(double w, double h)> SlotsFor(List<IntPtr> windows)
     {
-        double aspect = Math.Clamp(AspectOf(hwnd), 0.25, 4);
-        double w, h;
-        if (aspect >= 1) { w = 260; h = w / aspect; if (h < 100) { h = 100; w = h * aspect; } }
-        else { h = 300; w = h * aspect; if (w < 110) { w = 110; h = w / aspect; } }
-        return (Math.Round(w), Math.Round(h));
+        var aspects = windows.Select(h => Math.Clamp(AspectOf(h), 0.25, 4)).ToList();
+        var result = new List<(double, double)>();
+        if (aspects.Count == 1)
+        {
+            double a = aspects[0], w, h;
+            if (a >= 1) { w = 260; h = w / a; if (h < 100) { h = 100; w = h * a; } }
+            else { h = 300; w = h * a; if (w < 100) { w = 100; h = w / a; } }
+            result.Add((Math.Round(w), Math.Round(h)));
+            return result;
+        }
+        // A shared height: taller when a tall window is among them, so it doesn't end up a sliver
+        double row = aspects.Any(a => a < 1) ? 210 : 165;
+        foreach (var a in aspects)
+        {
+            double w = row * a, h = row;
+            if (w > 420) { w = 420; h = w / a; }      // extremely wide (ultrawide windows): a little shorter
+            if (w < 90) { w = 90; h = w / a; }        // very tall: room for the title (a little taller)
+            result.Add((Math.Round(w), Math.Round(h)));
+        }
+        return result;
     }
 
     static bool IsInside(DependencyObject d, DependencyObject target)
@@ -232,7 +252,8 @@ public sealed class WindowPreview : Window
         var all = WindowTracker.TaskbarWindows();
         var win = all.FirstOrDefault(w => Native.IsIconic(w.Hwnd)) ?? all.FirstOrDefault();
         Window? tall = null;
-        if (Environment.GetEnvironmentVariable("BRIM_PREVIEW_TALL") == "1")
+        var mode = Environment.GetEnvironmentVariable("BRIM_PREVIEW_TALL"); var wide = win;
+        if (mode is "1" or "2")
         {
             // A tall window shaped like a friends list, to check the preview keeps its shape
             tall = new Window { Title = "Friends (test)", Width = 300, Height = 720, Left = 40, Top = 40, ShowActivated = false, Background = new LinearGradientBrush(Colors.SteelBlue, Colors.MidnightBlue, 90) };
@@ -242,7 +263,7 @@ public sealed class WindowPreview : Window
             win = new AppWindow { Hwnd = new WindowInteropHelper(tall).Handle, Title = tall.Title };
         }
         if (win == null) { System.IO.File.WriteAllText(png + ".txt", "no window"); return; }
-        var app = new DockApp { Key = "test", Title = win.Title, Icon = win.ExePath != null ? IconHelper.ForPath(win.ExePath) : null, Windows = new List<AppWindow> { win } };
+        var app = new DockApp { Key = "test", Title = win.Title, Icon = win.ExePath != null ? IconHelper.ForPath(win.ExePath) : null, Windows = mode == "2" && wide != null ? new List<AppWindow> { wide, win } : new List<AppWindow> { win } };
         var host = new Window { WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = Brushes.Transparent, ShowInTaskbar = false, Topmost = true, ShowActivated = false, Width = 40, Height = 40 };
         var anchor = new Border { Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)) };
         host.Content = anchor;
