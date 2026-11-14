@@ -64,9 +64,12 @@ public sealed class TrayIcon : IDisposable
         return IntPtr.Zero;
     }
 
-    public void ShowMenu()
+    /// <param name="near">Brim's icon in the dock's tray panel, when opened from there: the menu sits next to it and
+    /// belongs to that panel (it stays while the pointer is on either)</param>
+    public void ShowMenu(UIElement? near = null)
     {
         var menu = new ContextMenu { Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
+        if (near != null) { menu.PlacementTarget = near; menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top; }
         menu.Items.Add(Item("Open notch", () => app.Notch?.ToggleOpen()));
         menu.Items.Add(Item("Settings", () => app.OpenSettings()));
         menu.Items.Add(Item("Wallpapers", () => app.OpenWallpapers()));

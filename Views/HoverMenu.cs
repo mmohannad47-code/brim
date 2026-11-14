@@ -46,11 +46,11 @@ public static class HoverMenu
         timer.Tick += (_, _) =>
         {
             if (!menu.IsOpen) { timer.Stop(); return; }
-            if (DateTime.Now - openedAt < TimeSpan.FromMilliseconds(400)) return; // time to move onto it
+            if (DateTime.Now - openedAt < TimeSpan.FromMilliseconds(300)) return; // time to move onto it
             Native.GetCursorPos(out var pt);
             bool over = OverMenu(menu, pt) || (owner != null && Over(owner, pt));
             away = over ? 0 : away + 1;
-            if (away < 5) return; // about half a second away from all of it
+            if (away < 2) return; // a fifth of a second away from all of it: snappy, but forgives a slip
             timer.Stop();
             menu.IsOpen = false;
         };

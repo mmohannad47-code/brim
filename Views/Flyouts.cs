@@ -66,7 +66,11 @@ public sealed class Flyout : Window
     HashSet<IntPtr> baseline = new();
     IntPtr menuOwner;
 
-    /// <summary>Every visible pop-up window (no title bar) on screen: where apps' own drawn menus live.</summary>
+    /// <summary>
+    /// Every visible window that could be a menu: no normal title bar, and a pop-up or always-on-top window. That
+    /// covers standard menus and apps that draw their own (Steam, Discord, Chrome-based apps…), whatever process
+    /// draws them.
+    /// </summary>
     static HashSet<IntPtr> Popups()
     {
         var set = new HashSet<IntPtr>();
@@ -74,7 +78,10 @@ public sealed class Flyout : Window
         {
             if (!Native.IsWindowVisible(h)) return true;
             long style = Native.GetWindowLongPtr(h, -16).ToInt64();
-            if ((style & 0x80000000L) != 0 && (style & 0x00C00000L) != 0x00C00000L) set.Add(h);
+            long ex = Native.GetWindowLongPtr(h, Native.GWL_EXSTYLE).ToInt64();
+            bool titleBar = (style & 0x00C00000L) == 0x00C00000L;
+            bool popupLike = (style & 0x80000000L) != 0 /* WS_POPUP */ || (ex & 0x8L) != 0 /* topmost */ || (ex & Native.WS_EX_TOOLWINDOW) != 0;
+            if (!titleBar && popupLike) set.Add(h);
             return true;
         }, IntPtr.Zero);
         return set;
@@ -199,7 +206,7 @@ public sealed class Flyout : Window
             if (overPanel || overMenu) entered = true;
             // Until the pointer has reached the panel once, give it a moment to get there
             if (overPanel || overButton || overMenu || (!entered && DateTime.Now - openedAt < TimeSpan.FromSeconds(2))) { away = 0; return; }
-            if (++away < 5) return; // about half a second away from all of them
+            if (++away < 2) return; // a fifth of a second away from all of them: snappy, but forgives a slip
             timer.Stop();
             CloseMenus(menus);
             SafeClose();
@@ -685,7 +692,7 @@ public sealed class TrayPanel : StackPanel
                     // open behind it like the other apps' menus
                     Flyout.HoldForMenu(new IntPtr(item.HWnd), item.Pid);
                     await System.Threading.Tasks.Task.Delay(30);
-                    ((App)Application.Current).ShowTrayMenu();
+                    ((App)Application.Current).ShowTrayMenu(cell);
                     return;
                 }
                 if (right)

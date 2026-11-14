@@ -66,7 +66,7 @@ public sealed class WindowPreview : Window
         SetResourceReference(ForegroundProperty, "Brim.Text");
         UseLayoutRounding = true;
 
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6) };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(3) };
         var shown = app.Windows.GetRange(0, Math.Min(app.Windows.Count, 5));
         var sizes = SlotsFor(shown.Select(x => x.Hwnd).ToList());
         for (int n = 0; n < shown.Count; n++)
@@ -74,19 +74,19 @@ public sealed class WindowPreview : Window
             var w = shown[n];
             var win = w;
             var (sw, sh) = sizes[n];
-            var card = new Border { CornerRadius = new CornerRadius(8), Padding = new Thickness(8), Background = Brushes.Transparent, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Top };
+            var card = new Border { CornerRadius = new CornerRadius(7), Padding = new Thickness(5), Background = Brushes.Transparent, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Top };
             var stack = new StackPanel();
 
             // The title row is exactly as wide as the picture (long titles are trimmed), so the card hugs the picture
-            var head = new Grid { Margin = new Thickness(0, 0, 0, 6), Width = sw };
+            var head = new Grid { Margin = new Thickness(1, 0, 0, 4), Width = sw };
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             head.ColumnDefinitions.Add(new ColumnDefinition());
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            if (app.Icon != null) head.Children.Add(new Image { Source = app.Icon, Width = 16, Height = 16, Margin = new Thickness(0, 0, 8, 0) });
-            var title = new TextBlock { Text = w.Title, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+            if (app.Icon != null) head.Children.Add(new Image { Source = app.Icon, Width = 14, Height = 14, Margin = new Thickness(0, 0, 6, 0) });
+            var title = new TextBlock { Text = w.Title, FontSize = 11.5, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(title, 1);
             head.Children.Add(title);
-            var close = new Button { Content = "", Width = 22, Height = 22, FontSize = 10, ToolTip = "Close window" };
+            var close = new Button { Content = "", Width = 20, Height = 20, FontSize = 9, ToolTip = "Close window" };
             close.SetResourceReference(StyleProperty, "IconButton");
             close.Click += (_, _) => { Native.PostMessage(win.Hwnd, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero); Close(); };
             Grid.SetColumn(close, 2);
@@ -192,18 +192,18 @@ public sealed class WindowPreview : Window
         if (aspects.Count == 1)
         {
             double a = aspects[0], w, h;
-            if (a >= 1) { w = 260; h = w / a; if (h < 100) { h = 100; w = h * a; } }
-            else { h = 300; w = h * a; if (w < 100) { w = 100; h = w / a; } }
+            if (a >= 1) { w = 210; h = w / a; if (h < 84) { h = 84; w = h * a; } }
+            else { h = 240; w = h * a; if (w < 90) { w = 90; h = w / a; } }
             result.Add((Math.Round(w), Math.Round(h)));
             return result;
         }
         // A shared height: taller when a tall window is among them, so it doesn't end up a sliver
-        double row = aspects.Any(a => a < 1) ? 210 : 165;
+        double row = aspects.Any(a => a < 1) ? 170 : 130;
         foreach (var a in aspects)
         {
             double w = row * a, h = row;
-            if (w > 420) { w = 420; h = w / a; }      // extremely wide (ultrawide windows): a little shorter
-            if (w < 90) { w = 90; h = w / a; }        // very tall: room for the title (a little taller)
+            if (w > 340) { w = 340; h = w / a; }      // extremely wide (ultrawide windows): a little shorter
+            if (w < 80) { w = 80; h = w / a; }        // very tall: room for the title (a little taller)
             result.Add((Math.Round(w), Math.Round(h)));
         }
         return result;
@@ -320,8 +320,8 @@ public sealed class WindowPreview : Window
             var (bl, bt, br, bb) = BordersOf(win.Hwnd);
             var source = new Native.RECT
             {
-                Left = (int)Math.Round(src.x * bl), Top = (int)Math.Round(src.y * bt),
-                Right = src.x - (int)Math.Round(src.x * br), Bottom = src.y - (int)Math.Round(src.y * bb),
+                Left = (int)Math.Round(src.x * bl) + 1, Top = (int)Math.Round(src.y * bt) + 1,
+                Right = src.x - (int)Math.Round(src.x * br) - 1, Bottom = src.y - (int)Math.Round(src.y * bb) - 1,
             };
             var topLeft = toDevice.Transform(slot.TransformToAncestor(this).Transform(new Point(0, 0)));
             var size = toDevice.Transform(new Point(slot.ActualWidth, slot.ActualHeight));
