@@ -255,6 +255,13 @@ public class AppSettings
     public List<string> BannersHidden { get; set; } = new();
     /// <summary>Look for new versions on GitHub and download them in the background (installing always asks first)</summary>
     public bool CheckUpdates { get; set; } = true;
+    /// <summary>Restart into a downloaded update by itself at a quiet moment (else it asks)</summary>
+    public bool AutoInstallUpdates { get; set; } = true;
+    /// <summary>The version that ran last (to say "Brim updated" once after an update)</summary>
+    public string? LastVersion { get; set; }
+    /// <summary>The update last handed to Setup, and when (so a failed install isn't retried in a loop)</summary>
+    public string? UpdateTried { get; set; }
+    public DateTime UpdateTriedAt { get; set; }
     public bool FirstRunDone { get; set; }
 }
 

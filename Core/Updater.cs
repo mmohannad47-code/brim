@@ -38,6 +38,53 @@ public static class Updater
     /// <summary>A newer version finished downloading and can be installed.</summary>
     public static event Action? Ready;
     public static event Action? Changed;
+    /// <summary>A quiet moment came with an update ready: restart into it now (like other apps updating themselves).</summary>
+    public static event Action? InstallNow;
+
+    /// <summary>How long nobody has to touch the PC before Brim restarts into an update.</summary>
+    internal static TimeSpan QuietFor = TimeSpan.FromMinutes(3);
+    static readonly System.Windows.Threading.DispatcherTimer quiet = new() { Interval = TimeSpan.FromMinutes(1) };
+
+    /// <summary>Away from the PC, and no game or video fullscreen anywhere (a restart would never interrupt you).</summary>
+    internal static bool QuietMoment(out string why)
+    {
+        if (WindowTracker.FullscreenMonitors().Count > 0) { why = "something is fullscreen"; return false; }
+        // Just started (the PC was turned on): update straight away, before you get going
+        if (DateTime.Now - startedAt < StartupWindow) { why = "just started"; return true; }
+        var idle = OledCare.Idle;
+        if (idle < QuietFor) { why = $"in use (idle {idle.TotalSeconds:0} s)"; return false; }
+        why = $"idle {idle.TotalMinutes:0.#} min, nothing fullscreen";
+        return true;
+    }
+
+    static readonly DateTime startedAt = DateTime.Now;
+    /// <summary>An update found this soon after Brim starts is installed right away.</summary>
+    static readonly TimeSpan StartupWindow = TimeSpan.FromMinutes(5);
+    static int failedChecks;
+
+    /// <summary>"Install updates by themselves" was switched on: an update already waiting gets installed too.</summary>
+    public static void AutoInstallChanged()
+    {
+        if (Now == State.Ready && SettingsStore.Current.AutoInstallUpdates) quiet.Start();
+    }
+
+    /// <summary>Once a minute while an update waits: install it when the moment is right.</summary>
+    static void QuietTick()
+    {
+        var s = SettingsStore.Current;
+        if (Now != State.Ready || !s.CheckUpdates || !s.AutoInstallUpdates) { quiet.Stop(); return; }
+        // Tried this very version a moment ago and still here (the install didn't take): don't go round in circles
+        if (s.UpdateTried == NewVersion && DateTime.Now - s.UpdateTriedAt < TimeSpan.FromHours(6))
+        {
+            quiet.Stop();
+            Log.Note("update", $"not installing {NewVersion} by itself again yet (it was tried at {s.UpdateTriedAt:HH:mm}); Settings › General › Restart to update still can");
+            return;
+        }
+        if (!QuietMoment(out var why)) return;
+        quiet.Stop();
+        Log.Note("update", $"installing Brim {NewVersion} by itself ({why})");
+        InstallNow?.Invoke();
+    }
 
     static HttpClient MakeClient()
     {
@@ -53,10 +100,11 @@ public static class Updater
     {
         CleanOld();
         if (!Allowed) return;
+        quiet.Tick += (_, _) => QuietTick();
         timer.Tick += (_, _) => { if (SettingsStore.Current.CheckUpdates) _ = Check(); };
         timer.Start();
-        // First look a little after start-up, out of the way of everything else
-        var first = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMinutes(1.5) };
+        // First look soon after start-up (turning the PC on is a good time to update), once the network is up
+        var first = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         first.Tick += (_, _) => { first.Stop(); if (SettingsStore.Current.CheckUpdates) _ = Check(); };
         first.Start();
     }
@@ -129,14 +177,27 @@ public static class Updater
                 File.Move(part, dest, true);
             }
             ReadyFile = dest;
+            failedChecks = 0;
             Log.Note("update", $"Brim {NewVersion} downloaded and ready");
             Set(State.Ready);
-            System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() => Ready?.Invoke()));
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                Ready?.Invoke();
+                // Install at a quiet moment, maybe right now (unless installing is left to you)
+                if (SettingsStore.Current.AutoInstallUpdates) { quiet.Start(); QuietTick(); }
+            }));
         }
         catch (Exception ex)
         {
             Log.Note("update", "check failed: " + ex.Message);
             Set(State.Failed, "Couldn't reach GitHub; it'll try again later");
+            // Right after the PC starts the network may not be up yet: try again in a couple of minutes, not hours
+            if (++failedChecks <= 3)
+            {
+                var retry = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMinutes(2) };
+                retry.Tick += (_, _) => { retry.Stop(); if (SettingsStore.Current.CheckUpdates) _ = Check(); };
+                retry.Start();
+            }
         }
         finally { busy = false; }
     }
@@ -158,6 +219,9 @@ public static class Updater
         try
         {
             Log.Note("update", $"installing Brim {NewVersion}");
+            SettingsStore.Current.UpdateTried = NewVersion;
+            SettingsStore.Current.UpdateTriedAt = DateTime.Now;
+            SettingsStore.Save();
             Process.Start(new ProcessStartInfo(ReadyFile, $"--install --after {Environment.ProcessId}")
             {
                 UseShellExecute = true,

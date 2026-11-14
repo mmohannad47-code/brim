@@ -20,7 +20,9 @@ Settings open on the first run so you can pick what you want. Nothing about your
 
 ### Update
 
-Brim updates itself (from 0.6.0 on): it downloads new versions in the background and the notch pops up *"Brim x is ready"*. Click it to restart into the new version. You can also check in **Settings › General › Updates**, or turn automatic updates off there. Your settings, notes and widgets are always kept.
+Brim updates itself in the background, like other apps. When you turn on your PC it checks straight away and installs a new version within the first few minutes; later in the day it waits until you've been away from the PC for a few minutes. It never restarts during a fullscreen game or video, and the notch says *"Brim updated"* afterwards. To be asked first instead, turn off **Install updates by themselves** in **Settings › General › Updates** (you can also check now or turn updates off there). Your settings, notes and widgets are always kept.
+
+On 0.6.0–0.6.5, the notch asks once (*"Brim x is ready"*, click it); from 0.6.6 on, updates install by themselves.
 
 Coming from 0.5.x? Download the newest `Setup.exe` once and run it (click **Yes** to update); after that, updates come by themselves.
 

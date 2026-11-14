@@ -386,7 +386,11 @@ public partial class App : Application
                     {
                         case "--update-test":
                             Updater.PretendVersion = "0.0.1";
+                            bool wouldInstall = false;
+                            Updater.InstallNow += () => wouldInstall = true; // (only noted: nothing is installed here)
                             await Updater.Check();
+                            await System.Threading.Tasks.Task.Delay(500);
+                            sb.AppendLine($"installs by itself right after start-up: {wouldInstall} (moment: {(Updater.QuietMoment(out var whyQuiet) ? "right" : "not yet")}, {whyQuiet})");
                             sb.AppendLine($"state {Updater.Now}, new version {Updater.NewVersion}, problem {Updater.Problem}");
                             if (Updater.ReadyFile is { } f && System.IO.File.Exists(f))
                             {
@@ -872,9 +876,15 @@ public partial class App : Application
             MessageCenter.Sync();
             Downloads.Start(); // the dock's download badge
             Updater.Ready += () =>
+            {
+                // Installing by itself: it waits for a quiet moment, so there's nothing to ask
+                if (S.AutoInstallUpdates) return;
                 Log.Note("update", "pop-up: " + (notch?.ShowAction("", $"Brim {Updater.NewVersion} is ready", "Click to restart and update",
                     InstallUpdate, 10) ?? "no notch"));
+            };
+            Updater.InstallNow += InstallUpdate;
             Updater.Start();
+            SayIfUpdated();
             WindowsBanners.Start(); // "only pop up in the notch"
             // A Wallpaper Engine video Brim used to play itself: hand it to Wallpaper Engine (it plays its own better)
             if (S.LiveWallpaper != null && WallpaperEngine.Installed &&
@@ -1328,6 +1338,21 @@ public partial class App : Application
     public void ShowTrayMenu(UIElement? near = null) => tray?.ShowMenu(near);
 
     /// <summary>Restart into the downloaded update (the new Setup waits for Brim to close, then installs and starts it).</summary>
+    /// <summary>Once, after Brim updated itself: a short "Brim updated" in the notch.</summary>
+    void SayIfUpdated()
+    {
+        if (!Installer.RunningInstalled) return;
+        var last = S.LastVersion;
+        if (last == Installer.Version) return;
+        S.LastVersion = Installer.Version;
+        SettingsStore.Save();
+        if (last == null || !Version.TryParse(last, out var was) || !Version.TryParse(Installer.Version, out var now) || now <= was) return;
+        Log.Note("update", $"now on {Installer.Version} (was {last})");
+        var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        t.Tick += (_, _) => { t.Stop(); notch?.ShowActivity("" /* sync arrows */, "Brim updated", Installer.Version, null, 4); };
+        t.Start();
+    }
+
     public void InstallUpdate()
     {
         if (Updater.Install()) Quit();

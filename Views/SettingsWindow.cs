@@ -1665,8 +1665,12 @@ public sealed class SettingsWindow : Window
             _ => Installer.RunningInstalled ? "Brim checks a little after it starts, then every few hours" : "Only the installed Brim updates itself",
         };
         Card(
-            Row("Get updates automatically", "Downloads new versions in the background. Installing always asks first (it restarts Brim).",
-                Switch(S.CheckUpdates, v => { S.CheckUpdates = v; Commit(); })),
+            Row("Get updates automatically", "Downloads new versions in the background",
+                Switch(S.CheckUpdates, v => { S.CheckUpdates = v; Commit(); Rebuild(); })),
+            S.CheckUpdates
+                ? Row("Install updates by themselves", "Brim restarts into the new version when you've been away from the PC for a few minutes, never during a game or video. Off: it asks first",
+                    Switch(S.AutoInstallUpdates, v => { S.AutoInstallUpdates = v; Commit(); Updater.AutoInstallChanged(); }))
+                : null,
             Updater.Now == Updater.State.Ready
                 ? Row($"Brim {Updater.NewVersion}", status, PillBtn("Restart to update", () => AppRef.InstallUpdate()))
                 : Row($"Brim {Installer.Version}", status, PillBtn("Check now", async () =>
