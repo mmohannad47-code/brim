@@ -56,14 +56,16 @@ It also pops out briefly for song changes, new messages, muting or unmuting your
 
 **Settings › Taskbar** › choose **Brim dock**. You get a rounded bar with Start, your pinned and open apps, the tray, quick settings and the clock.
 
-- Click an app to switch to it, again to minimise. Middle-click for a new window. Right-click to pin or close.
-- Point at an app to see live previews of its windows.
+- Click an app to switch to it, again to minimise. Middle-click for a new window. Right-click to pin, close or **End task** (stops an app that's stuck).
+- Point at an app to see live previews of its windows, each shaped like its window (tall ones like a friends list too).
 - **Red badge:** the app has notifications or unread messages. **Blue arrow badge:** it's downloading something.
 - **⌃** opens the tray icons. The status icons open quick settings. The far-right strip is *show desktop*.
 - It's on every screen, like Windows' taskbar (or pick one screen in **Settings › Taskbar › Screen**). An optional Task Manager button can sit next to the tray.
 - Size, spacing, position, auto-hide and whether windows stay above the dock are all in **Settings › Taskbar**.
 
 Prefer Windows' own taskbar? The same page can just tidy it (centre or left icons, hide Search/Task View/Widgets) or auto-hide it.
+
+Menus close by themselves once your pointer has left the menu and what you opened it from, everywhere in Brim.
 
 ### Widgets
 
