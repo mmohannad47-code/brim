@@ -48,7 +48,7 @@ The small pill at the top of the screen. **Point at it** (or press **Ctrl+Alt+N*
 | **Controls** | Wi-Fi, Bluetooth, mic, volume, output device and brightness. |
 | **Timer** | A focus timer; the notch counts down and pops out when time's up. |
 
-Choose which tabs to show, and their order, in **Settings › Notch**. The notch can sit at the left, centre or right, look like a notch or a floating island, and hides itself in fullscreen games and videos (only on the screen the game covers). While music plays, the closed notch shows the line being sung (turn off in **Settings › Notch › Lyrics**). With more than one monitor, **Settings › Notch › Screen › Every screen** puts a notch on each of them.
+Choose which tabs to show, and their order, in **Settings › Notch**. The notch can sit at the left, centre or right, look like a notch or a floating island, and hides itself in fullscreen games and videos (only on the screen the game covers). While music plays, the closed notch shows the line being sung (turn off in **Settings › Notch › Lyrics**). Turn on **Settings › Notch › Hide while an app covers it** to tuck it away while an app is maximised or a window sits under it (smaller windows elsewhere leave it showing). With more than one monitor, **Settings › Notch › Screen › Every screen** puts a notch on each of them.
 
 It also pops out briefly for song changes, new messages, muting or unmuting your sound or mic, charging and headphones connecting.
 

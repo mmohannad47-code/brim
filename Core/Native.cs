@@ -133,6 +133,12 @@ internal static class Native
     [DllImport("shell32.dll", EntryPoint = "#727")] public static extern int SHGetImageList(int list, ref Guid riid, out IImageList ppv);
 
     [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hWnd, int attr, out int value, int size);
+    [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hWnd, int attr, out RECT value, int size);
+
+    /// <summary>Where a window really is on screen (without the invisible resize border Windows 10/11 adds).</summary>
+    public static RECT VisibleRect(IntPtr h) =>
+        DwmGetWindowAttribute(h, 9 /* DWMWA_EXTENDED_FRAME_BOUNDS */, out RECT r, Marshal.SizeOf<RECT>()) == 0 ? r
+        : GetWindowRect(h, out r) ? r : default;
     [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hWnd, int attr, ref int value, int size);
 
     [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);

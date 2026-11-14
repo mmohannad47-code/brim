@@ -479,21 +479,47 @@ public partial class NotchWindow : Window
     bool HideMode => S.HideUntilHover || (S.HideOverApps && appInFront);
     bool appInFront;
 
-    /// <summary>Called when focus moves: shows the notch on the desktop, tucks it away over apps.</summary>
-    public void SetAppInFront(bool app)
+    /// <summary>Shows the notch, or tucks it away while an app covers its spot (each screen's notch on its own).</summary>
+    public void SetAppInFront(bool app, bool mirrorsToo = true)
     {
-        foreach (var m in MirrorsOf()) m.SetAppInFront(app);
+        if (mirrorsToo) foreach (var m in MirrorsOf()) m.SetAppInFront(app);
         if (app == appInFront) return;
         appInFront = app;
         Log.Note("notch", (app ? "tucked away: app in front " : "back: desktop in front ") + Log.Foreground());
         if (S.HideOverApps && !S.HideUntilHover && mode == Mode.Closed) { lastClosed = default; Collapse(); }
     }
 
+    /// <summary>
+    /// The strip at the top of the screen the notch sits in, in screen pixels: an app window reaching into it
+    /// (or maximised on this screen) tucks the notch away. Measured for the notch as it looks when shown.
+    /// </summary>
+    internal Native.RECT Zone()
+    {
+        var size = ShownClosedSize();
+        double w = size.Width + 20; // the ears either side
+        double h = size.Height + (S.Shape == NotchShape.Island ? S.IslandTop : 0) + 4;
+        double x = ShapeRow.HorizontalAlignment switch
+        {
+            HorizontalAlignment.Left => 0,
+            HorizontalAlignment.Right => ActualWidth - w,
+            _ => (ActualWidth - w) / 2,
+        };
+        var tl = PointToScreen(new Point(x, 0));
+        var br = PointToScreen(new Point(x + w, h));
+        return new Native.RECT { Left = (int)tl.X, Top = (int)tl.Y, Right = (int)br.X, Bottom = (int)br.Y };
+    }
+
     Size ClosedSize()
     {
         bool island = S.Shape == NotchShape.Island;
-        double h = island ? 34 : 32;
         if (HideMode) return new Size(island ? 160 : 180, 6);
+        return ShownClosedSize();
+    }
+
+    Size ShownClosedSize()
+    {
+        bool island = S.Shape == NotchShape.Island;
+        double h = island ? 34 : 32;
         if (SongActive) return new Size(S.Lyrics && Lyrics.Lines != null ? lyricWidth : 300, h);
         if (S.Face == RestingFace.Nothing) return new Size(island ? 120 : 180, h);
         return new Size(island ? 150 : 190, h);

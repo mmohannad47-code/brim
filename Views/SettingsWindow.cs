@@ -150,7 +150,7 @@ public sealed class SettingsWindow : Window
 
         Section("Behaviour");
         Card(
-            Row("Hide while an app is in front", "Shows on the desktop; while Chrome or any other app is focused it tucks away until you point at the top-centre",
+            Row("Hide while an app covers it", "Tucks away while an app is maximised or a window reaches up into the notch's spot; point at it to bring it back. Smaller windows elsewhere leave it showing",
                 Switch(S.HideOverApps, v => { S.HideOverApps = v; Commit(); })),
             Row("Always hide until I point at it", "Never drawn until your pointer touches the top-centre of the screen, even on the desktop", Switch(S.HideUntilHover, v => { S.HideUntilHover = v; Commit(); })),
             Row("Open delay", $"{S.HoverDelayMs} ms", SliderCtl(0, 600, S.HoverDelayMs, v => { S.HoverDelayMs = (int)Math.Round(v / 10) * 10; Commit(false); }, rebuildLabel: true)),

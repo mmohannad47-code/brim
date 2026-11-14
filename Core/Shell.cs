@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
@@ -371,17 +372,24 @@ public static class WindowTracker
     /// window has focus: clicking the desktop on another screen leaves the game's screen covered (the notch and dock
     /// there stay hidden). The screen you opened Start or the desktop on is never counted.
     /// </summary>
-    public static HashSet<IntPtr> FullscreenMonitors()
+    public static HashSet<IntPtr> FullscreenMonitors() => FullscreenMonitors(out _);
+
+    /// <param name="why">What decided each screen (for the log).</param>
+    public static HashSet<IntPtr> FullscreenMonitors(out string why)
     {
         var covered = new HashSet<IntPtr>();
         var decided = new HashSet<IntPtr>();
+        var reasons = new Dictionary<IntPtr, string>();
         var fg = Native.GetForegroundWindow();
         if (fg != IntPtr.Zero && KindOf(fg) is FocusKind.Desktop or FocusKind.Shell)
         {
             // Start/Search/taskbar open on the game's screen: let the dock show there. The desktop window spans every
             // screen, so it only says which screen you clicked by where the pointer is
             Native.GetCursorPos(out var pt);
-            decided.Add(KindOf(fg) == FocusKind.Desktop ? Native.MonitorFromPoint(pt, 2) : Native.MonitorFromWindow(fg, 2));
+            bool desktop = KindOf(fg) == FocusKind.Desktop;
+            var mon = desktop ? Native.MonitorFromPoint(pt, 2) : Native.MonitorFromWindow(fg, 2);
+            decided.Add(mon);
+            reasons[mon] = desktop ? "you clicked its desktop" : "Start/Search/taskbar open";
         }
         Native.EnumWindows((h, _) =>
         {
@@ -394,16 +402,24 @@ public static class WindowTracker
             var mi = new Native.MONITORINFO { cbSize = Marshal.SizeOf<Native.MONITORINFO>() };
             Native.GetMonitorInfo(mon, ref mi);
             Native.GetWindowRect(h, out var r);
+            Native.GetWindowThreadProcessId(h, out uint pid);
             if (CoversScreen(Native.IsZoomed(h), Native.GetWindowLongPtr(h, -16).ToInt64(), true, r, mi.rcMonitor))
             {
                 covered.Add(mon);
                 decided.Add(mon);
+                reasons[mon] = "fullscreen: " + ExeName(pid);
             }
             // A small always-on-top window (picture-in-picture, a sticky note) over a game doesn't uncover it;
             // an ordinary window on top means the screen isn't fullscreen
-            else if ((Native.GetWindowLongPtr(h, Native.GWL_EXSTYLE).ToInt64() & 0x8 /* WS_EX_TOPMOST */) == 0) decided.Add(mon);
+            else if ((Native.GetWindowLongPtr(h, Native.GWL_EXSTYLE).ToInt64() & 0x8 /* WS_EX_TOPMOST */) == 0)
+            {
+                decided.Add(mon);
+                reasons[mon] = "top window " + ExeName(pid) + " isn't fullscreen";
+            }
             return true;
         }, IntPtr.Zero);
+        why = string.Join("; ", Native.Screens().Select(s =>
+            $"{s.Device.Replace(@"\\.\", "")}: {(reasons.TryGetValue(s.Handle, out var r) ? r : "nothing open")}"));
         return covered;
     }
 

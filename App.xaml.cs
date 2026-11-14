@@ -131,6 +131,24 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Length == 2 && e.Args[0] == "--cover-test")
+        {
+            // Developer check: an invisible notch, then which windows would tuck it away
+            SettingsStore.Load();
+            SettingsStore.ReadOnly = true;
+            Dispatcher.InvokeAsync(async () =>
+            {
+                var n = new Brim.Views.NotchWindow { Opacity = 0, ShowActivated = false };
+                n.Show();
+                await System.Threading.Tasks.Task.Delay(500);
+                string report;
+                try { report = CoverTest(n); } catch (Exception ex) { report = "FAIL " + ex; }
+                n.Close();
+                System.IO.File.WriteAllText(e.Args[1], report);
+                Shutdown();
+            });
+            return;
+        }
         if (e.Args.Length == 2 && e.Args[0] == "--lyrics-test")
         {
             // Developer check (opens nothing): parsing, LRCLIB lookups, and the line for what's playing right now
@@ -1018,12 +1036,19 @@ public partial class App : Application
     {
         fsCheckedAt = DateTime.Now;
         ApplyFullscreen();
+        CheckAppInFront(); // a window dragged or resized into (or out of) the notch's spot
     }
+
+    string lastFullscreenWhy = "";
 
     /// <summary>Hide the notch and dock on each screen a game or video covers (the other screens keep theirs).</summary>
     void ApplyFullscreen()
     {
-        var covered = WindowTracker.FullscreenMonitors();
+        var covered = WindowTracker.FullscreenMonitors(out var why);
+        // What decided each screen, when a screen goes fullscreen or stops being it (to see why a notch showed
+        // over a game); not on every switch between ordinary apps
+        var key = string.Join(",", covered.OrderBy(m => (long)m));
+        if (key != lastFullscreenWhy) { lastFullscreenWhy = key; Log.Note("fullscreen", why); }
         foreach (var n in AllNotches) n.SetFullscreenHidden(S.HideInFullscreen && covered.Contains(n.Monitor));
         foreach (var d in AllDocks) d.SetFullscreen(covered.Contains(d.Monitor));
     }
@@ -1071,10 +1096,65 @@ public partial class App : Application
         settle.Start();
     }
 
+    /// <summary>
+    /// "Hide while an app covers it": each screen's notch tucks away while an app window there is maximised or
+    /// reaches up into the notch's spot. A smaller window elsewhere on the desktop leaves it showing, focused or not.
+    /// </summary>
     void CheckAppInFront()
     {
         if (!S.HideOverApps || notch == null) return;
-        if (Native.AppInFront() is bool app) notch.SetAppInFront(app && !Native.DesktopRaised());
+        if (Native.AppInFront() is null) return; // Start, Search, Brim's own pop-ups: no change
+        if (Native.DesktopRaised()) { foreach (var n in AllNotches) n.SetAppInFront(false, mirrorsToo: false); return; }
+        var windows = WindowTracker.TaskbarWindows();
+        foreach (var n in AllNotches) n.SetAppInFront(CoversNotch(n, windows), mirrorsToo: false);
+    }
+
+    static bool CoversNotch(Brim.Views.NotchWindow n, System.Collections.Generic.List<AppWindow> windows)
+    {
+        var zone = n.Zone();
+        var mon = n.Monitor;
+        foreach (var w in windows)
+        {
+            if (Native.IsIconic(w.Hwnd)) continue;
+            bool zoomed = Native.IsZoomed(w.Hwnd);
+            // Brim's own Settings and Wallpapers windows: you're setting up the desktop (unless they're maximised)
+            if (w.Pid == (uint)Environment.ProcessId && !zoomed) continue;
+            if (WindowCovers(zone, mon, Native.VisibleRect(w.Hwnd), zoomed, Native.MonitorFromWindow(w.Hwnd, 2))) return true;
+        }
+        return false;
+    }
+
+    /// <summary>A window covers the notch: maximised on its screen, or reaching into its spot.</summary>
+    internal static bool WindowCovers(Native.RECT zone, IntPtr notchScreen, Native.RECT r, bool zoomed, IntPtr windowScreen) =>
+        zoomed && windowScreen == notchScreen ||
+        r.Left < zone.Right && r.Right > zone.Left && r.Top < zone.Bottom && r.Bottom > zone.Top;
+
+    /// <summary>`--cover-test out.txt`: the cover rules on made-up windows, then on the windows open right now.</summary>
+    static string CoverTest(Brim.Views.NotchWindow n)
+    {
+        var sb = new System.Text.StringBuilder();
+        int fails = 0;
+        var zone = n.Zone();
+        var mon = n.Monitor;
+        var other = new IntPtr(-1);
+        Native.RECT R(int l, int t, int w, int h) => new() { Left = l, Top = t, Right = l + w, Bottom = t + h };
+        int cx = (zone.Left + zone.Right) / 2;
+        void Expect(string name, bool got, bool want) { if (got != want) fails++; sb.AppendLine($"{(got == want ? "ok  " : "FAIL")} {name}: {got}"); }
+        Expect("small window in the middle of the desktop", WindowCovers(zone, mon, R(cx - 300, 300, 600, 400), false, mon), false);
+        Expect("small window off to the side, at the very top", WindowCovers(zone, mon, R(zone.Left - 700, 0, 500, 400), false, mon), false);
+        Expect("window dragged up under the notch", WindowCovers(zone, mon, R(cx - 200, zone.Bottom - 10, 400, 300), false, mon), true);
+        Expect("window just below the notch", WindowCovers(zone, mon, R(cx - 200, zone.Bottom + 2, 400, 300), false, mon), false);
+        Expect("maximised on this screen", WindowCovers(zone, mon, R(0, 0, 10, 10), true, mon), true);
+        Expect("maximised on another screen", WindowCovers(zone, mon, R(-3000, 0, 1920, 1040), true, other), false);
+        sb.AppendLine($"\nnotch spot: {zone.Left},{zone.Top} – {zone.Right},{zone.Bottom}");
+        foreach (var w in WindowTracker.TaskbarWindows().Where(w => !Native.IsIconic(w.Hwnd)))
+        {
+            var r = Native.VisibleRect(w.Hwnd);
+            bool c = WindowCovers(zone, mon, r, Native.IsZoomed(w.Hwnd), Native.MonitorFromWindow(w.Hwnd, 2));
+            sb.AppendLine($"     now: {System.IO.Path.GetFileName(w.ExePath ?? "?")} at {r.Left},{r.Top} {r.Right - r.Left}x{r.Bottom - r.Top}{(Native.IsZoomed(w.Hwnd) ? " maximised" : "")} → {(c ? "covers" : "leaves it showing")}");
+        }
+        sb.Insert(0, fails == 0 ? "ALL PASSED\n" : $"{fails} FAILED\n");
+        return sb.ToString();
     }
 
     void React()
