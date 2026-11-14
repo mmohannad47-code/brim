@@ -95,8 +95,10 @@ public sealed class TrayIcon : IDisposable
         Brim.Views.Flyout.CloseBrimMenus = () => menu.IsOpen = false; // the tray panel closes it when you move away
         menu.Opened += (_, _) =>
         {
-            // A popup only closes on outside clicks when its window is in front
-            if (PresentationSource.FromVisual(menu) is HwndSource ps) Native.SetForegroundWindow(ps.Handle);
+            // From the real tray icon no Brim window is in front, and a popup only closes on outside clicks when its
+            // window is. (Inside the dock's tray panel it's an ordinary menu of that panel: forcing it in front there
+            // handed focus straight back to the panel, which closed the menu.)
+            if (near == null && PresentationSource.FromVisual(menu) is HwndSource ps) Native.SetForegroundWindow(ps.Handle);
         };
         menu.IsOpen = true;
     }

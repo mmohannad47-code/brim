@@ -45,6 +45,11 @@ public sealed class Flyout : Window
         // Every pop-up window on screen before the click: anything new after it is the app's menu, even when it
         // isn't focused or comes from a helper process (Steam draws its menu in steamwebhelper.exe)
         baseline = Popups();
+        // The app and every process it started: any new window of theirs is its menu, whatever kind of window
+        appPids = ProcessTree(pid);
+        allBefore = AllWindows();
+        traceUntil = DateTime.Now.AddSeconds(8);
+        Trace($"right-click held for {string.Join(",", appPids)}; {baseline.Count} pop-ups and {allBefore.Count} windows already on screen");
         holdTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         holdTimer.Tick += (_, _) =>
         {
@@ -55,10 +60,11 @@ public sealed class Flyout : Window
             holdTimer.Stop();
             holdForMenu = false;
             var fg = Native.GetForegroundWindow();
+            Trace($"menu gone (saw it: {sawMenu}); in front now: {Native.ClassOf(fg)} of {System.IO.Path.GetFileName(Native.ProcessPath(PidOf(fg)) ?? "?")}");
             if (fg == me) return;
             // Menu dismissed (Esc, or a click on this panel): the focus is left on the app's hidden tray window
             if (fg == IntPtr.Zero || fg == owner || !Native.IsWindowVisible(fg)) { Activate(); Native.ForceForeground(me); return; }
-            SafeClose(); // you chose something that opened a window, or clicked another app
+            SafeClose("another window took over after the menu"); // you chose something that opened a window, or clicked another app
         };
         holdTimer.Start();
     }
@@ -87,14 +93,86 @@ public sealed class Flyout : Window
         return set;
     }
 
-    /// <summary>The menu(s) opened from this panel: a standard Windows menu, or pop-ups that appeared after the click.</summary>
+    HashSet<uint> appPids = new();
+    HashSet<IntPtr> allBefore = new();
+    DateTime traceUntil;
+    readonly HashSet<IntPtr> traced = new();
+
+    /// <summary>A short note in brim.log while a right-click is being followed (to see what an app's menu does).</summary>
+    void Trace(string text) { if (DateTime.Now < traceUntil) Log.Note("panel", text); }
+
+    static HashSet<IntPtr> AllWindows()
+    {
+        var set = new HashSet<IntPtr>();
+        Native.EnumWindows((h, _) => { if (Native.IsWindowVisible(h)) set.Add(h); return true; }, IntPtr.Zero);
+        return set;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    struct PROCESSENTRY32
+    {
+        public uint dwSize, cntUsage, th32ProcessID;
+        public IntPtr th32DefaultHeapID;
+        public uint th32ModuleID, cntThreads, th32ParentProcessID;
+        public int pcPriClassBase;
+        public uint dwFlags;
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 260)] public string szExeFile;
+    }
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint pid);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] static extern bool Process32FirstW(IntPtr snap, ref PROCESSENTRY32 e);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] static extern bool Process32NextW(IntPtr snap, ref PROCESSENTRY32 e);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+
+    /// <summary>A process and everything it started (Steam → steamwebhelper…), for apps whose menu is drawn by a helper.</summary>
+    static HashSet<uint> ProcessTree(uint root)
+    {
+        var tree = new HashSet<uint> { root };
+        if (root == Environment.ProcessId) return tree;
+        var parentOf = new List<(uint pid, uint parent)>();
+        var snap = CreateToolhelp32Snapshot(0x2, 0);
+        if (snap == IntPtr.Zero || snap == new IntPtr(-1)) return tree;
+        try
+        {
+            var e = new PROCESSENTRY32 { dwSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<PROCESSENTRY32>() };
+            if (Process32FirstW(snap, ref e))
+                do parentOf.Add((e.th32ProcessID, e.th32ParentProcessID)); while (Process32NextW(snap, ref e));
+        }
+        finally { CloseHandle(snap); }
+        for (bool grew = true; grew;)
+        {
+            grew = false;
+            foreach (var (p, parent) in parentOf)
+                if (tree.Contains(parent) && tree.Add(p)) grew = true;
+        }
+        return tree;
+    }
+
+    /// <summary>
+    /// The menu(s) opened from this panel: a standard Windows menu, pop-ups that appeared after the click, or any
+    /// new window of the clicked app or a process it started.
+    /// </summary>
     List<IntPtr> MenuWindows(IntPtr me)
     {
         var list = new List<IntPtr>();
         var m = Native.FindWindow("#32768", null);
         if (m != IntPtr.Zero && Native.IsWindowVisible(m)) list.Add(m);
         if (holdForMenu)
+        {
             foreach (var h in Popups()) if (h != me && !baseline.Contains(h) && !list.Contains(h)) list.Add(h);
+            foreach (var h in AllWindows())
+            {
+                if (h == me || list.Contains(h) || allBefore.Contains(h)) continue;
+                Native.GetWindowThreadProcessId(h, out uint p);
+                if (appPids.Contains(p)) list.Add(h);
+            }
+        }
+        foreach (var h in list)
+            if (traced.Add(h))
+            {
+                Native.GetWindowThreadProcessId(h, out uint p);
+                Native.GetWindowRect(h, out var r);
+                Trace($"menu window: {Native.ClassOf(h)} of {System.IO.Path.GetFileName(Native.ProcessPath(p) ?? "?")}, style 0x{Native.GetWindowLongPtr(h, -16).ToInt64():X}, ex 0x{Native.GetWindowLongPtr(h, Native.GWL_EXSTYLE).ToInt64():X}, at {r.Left},{r.Top} {r.Right - r.Left}x{r.Bottom - r.Top}");
+            }
         return list;
     }
 
@@ -165,7 +243,7 @@ public sealed class Flyout : Window
         SizeChanged += (_, _) => { if (IsLoaded) Place(); };
         // Closing deactivates the window, which would ask it to close a second time mid-close
         Closing += (_, _) => closing = true;
-        Deactivated += (_, _) => { if (!holdForMenu) SafeClose(); };
+        Deactivated += (_, _) => { if (!holdForMenu) SafeClose("lost focus"); else Trace("lost focus to the menu (kept open)"); };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) SafeClose(); };
         Closed += (_, _) =>
         {
@@ -193,23 +271,30 @@ public sealed class Flyout : Window
             if (closing || open != this) { timer.Stop(); return; }
             Native.GetCursorPos(out var pt);
             bool Inside(IntPtr w) => Native.GetWindowRect(w, out var r) && pt.X >= r.Left && pt.X < r.Right && pt.Y >= r.Top && pt.Y < r.Bottom;
+            bool In(Rect r) => pt.X >= r.Left && pt.X < r.Right && pt.Y >= r.Top && pt.Y < r.Bottom;
+            Native.GetWindowRect(me, out var pr);
+            var panelRect = new Rect(pr.Left, pr.Top, pr.Right - pr.Left, pr.Bottom - pr.Top);
             bool overPanel = Inside(me);
             bool overButton = false;
             if (PresentationSource.FromVisual(anchor) != null)
             {
                 var tl = anchor.PointToScreen(new Point(0, 0));
                 var br = anchor.PointToScreen(new Point(anchor.ActualWidth, anchor.ActualHeight));
-                overButton = pt.X >= tl.X && pt.X < br.X && pt.Y >= tl.Y && pt.Y < br.Y;
+                var buttonRect = new Rect(tl, br);
+                // On the button, or on the way between it and the panel
+                overButton = In(buttonRect) || In(Rect.Union(buttonRect, panelRect)) && pt.Y >= panelRect.Bottom - 2;
             }
             var menus = MenuWindows(me);
-            bool overMenu = menus.Any(Inside);
+            // On a menu, or anywhere between the panel and it (menus often open off to one side, and the way
+            // there crosses a gap that isn't on either)
+            bool overMenu = menus.Any(m => Native.GetWindowRect(m, out var r) && In(Rect.Union(panelRect, new Rect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top))));
             if (overPanel || overMenu) entered = true;
             // Until the pointer has reached the panel once, give it a moment to get there
             if (overPanel || overButton || overMenu || (!entered && DateTime.Now - openedAt < TimeSpan.FromSeconds(2))) { away = 0; return; }
             if (++away < 2) return; // a fifth of a second away from all of them: snappy, but forgives a slip
             timer.Stop();
             CloseMenus(menus);
-            SafeClose();
+            SafeClose("pointer left the panel and its menus");
         };
         timer.Start();
     }
@@ -232,9 +317,12 @@ public sealed class Flyout : Window
     /// <summary>Closes Brim's own tray menu if it's open (set by the tray icon).</summary>
     public static Action? CloseBrimMenus;
 
-    void SafeClose()
+    static uint PidOf(IntPtr h) { Native.GetWindowThreadProcessId(h, out uint p); return p; }
+
+    void SafeClose(string? why = null)
     {
         if (closing) return;
+        if (why != null) Trace("panel closed: " + why);
         closing = true;
         Close();
     }

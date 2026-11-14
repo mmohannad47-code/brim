@@ -15,6 +15,8 @@ public sealed class TrayIconItem : Observable
     public uint Callback { get; set; }
     public uint Version { get; set; }
     public uint Pid { get; set; }
+    /// <summary>Brim already asked the app to register this icon again (to learn what it's missing)</summary>
+    public bool AskedAgain { get; set; }
 
     ImageSource? icon;
     public ImageSource? Icon { get => icon; set => Set(ref icon, value); }
@@ -299,6 +301,9 @@ public sealed class TrayService : IDisposable
                     }
                     if ((n.uFlags & 0x4) != 0) existing.Tip = n.szTip ?? "";
                     if ((n.uFlags & 0x8) != 0 && (n.dwStateMask & 1) != 0) existing.Hidden = (n.dwState & 1) != 0;
+                    // An icon Brim only knows from later updates (it was registered with Windows before Brim took over
+                    // the tray) has no click message yet, so clicks on it would go nowhere: ask the app to register again
+                    if (existing.Callback == 0 && !existing.AskedAgain) { existing.AskedAgain = true; AskToRegisterAgain(existing); }
                     break;
                 case 2: // NIM_DELETE
                     if (existing != null)
@@ -320,11 +325,36 @@ public sealed class TrayService : IDisposable
         finally { Marshal.FreeHGlobal(buf); }
     }
 
+    /// <summary>The same "the taskbar was just created, add your icons" Windows sends after Explorer restarts, to one app.</summary>
+    static void AskToRegisterAgain(TrayIconItem icon)
+    {
+        Native.SendNotifyMessage(new IntPtr(icon.HWnd), taskbarCreated, IntPtr.Zero, IntPtr.Zero);
+        // Some apps listen on their main window rather than the icon's: the other top-level windows of that process too
+        Native.EnumWindows((h, _) =>
+        {
+            Native.GetWindowThreadProcessId(h, out uint p);
+            if (p == icon.Pid && h != new IntPtr(icon.HWnd)) Native.SendNotifyMessage(h, taskbarCreated, IntPtr.Zero, IntPtr.Zero);
+            return true;
+        }, IntPtr.Zero);
+    }
+
     /// <summary>Pass a click on to the app that owns the icon, the way Explorer would.</summary>
-    public static void Click(TrayIconItem icon, bool right, bool doubleClick = false)
+    public static async void Click(TrayIconItem icon, bool right, bool doubleClick = false)
     {
         var owner = new IntPtr(icon.HWnd);
         if (!Native.IsWindow(owner)) { Instance?.Icons.Remove(icon); return; }
+        if (icon.Callback == 0)
+        {
+            // Still don't know which message this app wants: ask it to register again and wait a moment for it
+            AskToRegisterAgain(icon);
+            for (int i = 0; i < 12 && icon.Callback == 0; i++)
+            {
+                await System.Threading.Tasks.Task.Delay(50);
+                if (Instance?.Icons.FirstOrDefault(x => x.Matches(icon.HWnd, icon.UID, icon.Guid)) is { } fresh && fresh != icon) icon = fresh;
+            }
+            Log.Note("tray", icon.Callback == 0 ? $"'{icon.Tip}' never said which message it wants" : $"'{icon.Tip}' registered again: message 0x{icon.Callback:X}");
+            if (icon.Callback == 0) return;
+        }
         bool allowed = Native.AllowSetForegroundWindow(icon.Pid);
         // Give the app's own (hidden) tray window focus first, like Windows' taskbar does. Apps show their menu
         // with TrackPopupMenu, which closes the menu straight away if their window isn't the focused one.
@@ -334,7 +364,7 @@ public sealed class TrayService : IDisposable
         Native.GetWindowThreadProcessId(owner, out uint ownerPid);
         Log.Note("tray", $"{(right ? "right" : doubleClick ? "double" : "left")}-click on '{icon.Tip.Split('\n')[0]}' " +
             $"({System.IO.Path.GetFileName(Native.ProcessPath(ownerPid) ?? "?")}, format v{icon.Version}, id {icon.UID}{(icon.Guid != Guid.Empty ? ", by guid" : "")}, " +
-            $"window {Native.ClassOf(owner)}, allowed to come forward {allowed}, its window in front {front}, at {pt.X},{pt.Y})");
+            $"window {Native.ClassOf(owner)}, message 0x{icon.Callback:X}, allowed to come forward {allowed}, its window in front {front}, at {pt.X},{pt.Y})");
 
         void Send(int mouseMsg)
         {

@@ -48,7 +48,7 @@ public static class HoverMenu
             if (!menu.IsOpen) { timer.Stop(); return; }
             if (DateTime.Now - openedAt < TimeSpan.FromMilliseconds(300)) return; // time to move onto it
             Native.GetCursorPos(out var pt);
-            bool over = OverMenu(menu, pt) || (owner != null && Over(owner, pt));
+            bool over = OverMenu(menu, pt) || (owner != null && Over(owner, pt)) || Between(owner, menu, pt);
             away = over ? 0 : away + 1;
             if (away < 2) return; // a fifth of a second away from all of it: snappy, but forgives a slip
             timer.Stop();
@@ -56,6 +56,25 @@ public static class HoverMenu
         };
         menu.Closed += (_, _) => timer.Stop();
         timer.Start();
+    }
+
+    /// <summary>On the way from what the menu was opened from to the menu (the gap between them doesn't count as leaving).</summary>
+    static bool Between(FrameworkElement? owner, ContextMenu menu, Native.POINT pt)
+    {
+        if (owner == null || ScreenRect(owner) is not { } a) return false;
+        if (PresentationSource.FromVisual(menu) is not HwndSource src || !Native.GetWindowRect(src.Handle, out var r)) return false;
+        var both = Rect.Union(a, new Rect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top));
+        return pt.X >= both.Left && pt.X < both.Right && pt.Y >= both.Top && pt.Y < both.Bottom;
+    }
+
+    static Rect? ScreenRect(FrameworkElement el)
+    {
+        try
+        {
+            if (!el.IsVisible || PresentationSource.FromVisual(el) == null) return null;
+            return new Rect(el.PointToScreen(new Point(0, 0)), el.PointToScreen(new Point(el.ActualWidth, el.ActualHeight)));
+        }
+        catch { return null; }
     }
 
     /// <summary>The pointer (screen pixels) is over this element.</summary>
