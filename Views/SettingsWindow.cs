@@ -1548,6 +1548,8 @@ public sealed class SettingsWindow : Window
                 Row("Surface", "Glass blurs what's behind the dock. Clear drops the bar so only the icons float.",
                     Chips(new[] { "Solid", "Glass", "Clear" }, S.DockSurface, v => { S.DockSurface = v; Commit(); })),
                 Row("Show the clock", "Click it for notifications and the calendar", Switch(S.DockClock, v => { S.DockClock = v; Commit(); })),
+                Row("Show the keyboard language", "ENG, ARA… next to the clock when Windows has more than one. Click it to switch, right-click to pick",
+                    Switch(S.DockLanguage, v => { S.DockLanguage = v; Commit(); })),
                 Row("Show the temperature", S.WeatherLat == null ? "Set your city in Widgets › Weather first" : $"Weather for {S.WeatherCity}", Switch(S.DockWeather, v => { S.DockWeather = v; Commit(); })),
                 Row("Badges on app icons", "A red dot or count when an app has something for you (a notification, unread messages, or it asked for attention)",
                     Switch(S.DockBadges, v => { S.DockBadges = v; Commit(); })),

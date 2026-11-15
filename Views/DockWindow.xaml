@@ -89,6 +89,12 @@
                     <TextBlock x:Name="BatteryText" FontSize="12" VerticalAlignment="Center" Margin="10,0,0,0" Visibility="Collapsed"/>
                 </StackPanel>
             </Button>
+            <Button x:Name="LangBtn" Style="{StaticResource Tile}" Click="Lang_Click" MouseRightButtonUp="Lang_RightClick" Padding="0" Visibility="Collapsed">
+                <StackPanel VerticalAlignment="Center" Margin="8,0">
+                    <TextBlock x:Name="LangText" FontSize="11.5" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="LangRegion" FontSize="9.5" Foreground="{DynamicResource Brim.Dim}" HorizontalAlignment="Center" Visibility="Collapsed"/>
+                </StackPanel>
+            </Button>
             <Button x:Name="ClockBtn" Style="{StaticResource Tile}" Click="Clock_Click" ToolTip="Notifications and calendar" Padding="0">
                 <StackPanel VerticalAlignment="Center" Margin="10,0">
                     <TextBlock x:Name="TimeText" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Right"/>

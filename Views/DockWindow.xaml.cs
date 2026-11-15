@@ -265,6 +265,7 @@ public partial class DockWindow : Window
         WeatherBtn.Height = tile;
         DesktopBtn.Height = tile;
         ClockBtn.Height = tile;
+        LangBtn.Height = tile;
         ClockBtn.Visibility = S.DockClock ? Visibility.Visible : Visibility.Collapsed;
         pinTargets.Clear();
         known.Clear();
@@ -286,6 +287,7 @@ public partial class DockWindow : Window
     void UpdateClock()
     {
         UpdateStatus();
+        UpdateLanguage();
         var now = DateTime.Now;
         TimeText.Text = now.ToString(S.Clock24 ? "HH:mm" : "h:mm tt");
         DateText.Text = now.ToString("ddd d MMM");
@@ -1024,6 +1026,69 @@ public partial class DockWindow : Window
 
     // Windows' own Settings (Brim's are in the notch)
     void Settings_Click(object sender, RoutedEventArgs e) => Launcher.Open("ms-settings:");
+
+    // ---------- keyboard language (ENG, ARA…), like Windows' taskbar
+
+    KeyboardLanguage.Layout? shownLang;
+
+    /// <summary>Every second: the language of the window you're typing in. Only shown when Windows has more than one.</summary>
+    void UpdateLanguage()
+    {
+        var all = S.DockLanguage ? KeyboardLanguage.All() : new();
+        if (all.Count < 2) { LangBtn.Visibility = Visibility.Collapsed; shownLang = null; return; }
+        if (KeyboardLanguage.Current() is not { } now) return;
+        LangBtn.Visibility = Visibility.Visible;
+        if (now == shownLang) return;
+        shownLang = now;
+        LangText.Text = now.Short;
+        LangRegion.Text = now.Region;
+        LangRegion.Visibility = now.Region.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        LangBtn.ToolTip = $"{now.Name}\nClick to switch · right-click to pick";
+    }
+
+    /// <summary>Show the new language straight away, not on the next second.</summary>
+    async void LanguageSoon()
+    {
+        await System.Threading.Tasks.Task.Delay(120);
+        shownLang = null;
+        UpdateLanguage();
+    }
+
+    // Click: the next language, in the window you were typing in (the dock never takes the keyboard from it)
+    void Lang_Click(object sender, RoutedEventArgs e)
+    {
+        var window = KeyboardLanguage.Window;
+        KeyboardLanguage.Switch(window, KeyboardLanguage.Next(KeyboardLanguage.Current()));
+        LanguageSoon();
+    }
+
+    void Lang_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        var window = KeyboardLanguage.Window; // before the menu opens
+        var now = KeyboardLanguage.Current();
+        var menu = new ContextMenu();
+        foreach (var l in KeyboardLanguage.All())
+        {
+            var layout = l;
+            menu.Items.Add(Item((now?.Hkl == l.Hkl ? "✓  " : "     ") + l.Name, () => { KeyboardLanguage.Switch(window, layout.Hkl); LanguageSoon(); }));
+        }
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item("Language settings…", () => Launcher.Open("ms-settings:regionlanguage")));
+        menu.Items.Add(Item("Hide from the dock", () =>
+        {
+            S.DockLanguage = false;
+            SettingsStore.Save();
+            UpdateLanguage();
+            ((App)Application.Current).RefreshSettingsWindow();
+        }));
+        IsAnyMenuOpen = true;
+        HoverMenu.SetOwner(menu, LangBtn);
+        menu.Closed += (_, _) => IsAnyMenuOpen = false;
+        menu.PlacementTarget = LangBtn;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
+        menu.IsOpen = true;
+    }
 
     // Task Manager (Windows' own; on every Windows 10/11 PC)
     void TaskMgr_Click(object sender, RoutedEventArgs e) =>

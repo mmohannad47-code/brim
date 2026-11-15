@@ -401,7 +401,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -412,6 +412,10 @@ public partial class App : Application
                 {
                     switch (e.Args[0])
                     {
+                        case "--lang-test":
+                            foreach (var l in KeyboardLanguage.All()) sb.AppendLine($"installed: {l.Short} {l.Region} · {l.Name} (0x{l.Hkl.ToInt64():X})");
+                            sb.AppendLine("now, in the window in front: " + (KeyboardLanguage.Current() is { } cur ? $"{cur.Short} {cur.Region} · {cur.Name}" : "unknown"));
+                            break;
                         case "--admin-test":
                         {
                             // Which shortcuts and games offer "Run as administrator" (nothing is started)
