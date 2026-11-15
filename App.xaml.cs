@@ -725,6 +725,17 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Length == 2 && e.Args[0] == "--drag-snapshot")
+        {
+            SettingsStore.Load();
+            Dispatcher.InvokeAsync(async () =>
+            {
+                try { await Snapshot.DragShots(e.Args[1]); }
+                catch (Exception ex) { Log.Error("drag snapshot", ex); System.IO.File.WriteAllText(System.IO.Path.Combine(e.Args[1], "error.txt"), ex.ToString()); }
+                Shutdown();
+            });
+            return;
+        }
         if (e.Args.Length == 2 && e.Args[0] == "--lyrics-snapshot")
         {
             SettingsStore.Load();
@@ -886,6 +897,7 @@ public partial class App : Application
             MessageCenter.Arrived += m =>
             {
                 if (!S.MessagePopups || notch == null) { Log.Note("messages", "pop-up off in settings"); return; }
+                if (MessageCenter.MutedUntil is DateTime until) { Log.Note("messages", $"pop-up snoozed until {until:HH:mm}"); return; }
                 var shown = notch.ShowMessage(m.Sender, m.Text.Length > 0 ? $"{m.App} · {m.Text}" : m.App, m.Icon);
                 Log.Note("messages", $"pop-up for {m.App}: {shown}");
             };

@@ -117,6 +117,7 @@ public sealed class GamesStrip : Grid
             scroller.ScrollToHorizontalOffset(scroller.HorizontalOffset - e.Delta * 0.35);
             e.Handled = true;
         };
+        row.AddHandler(MouseMoveEvent, new MouseEventHandler((_, e) => EdgeScroll(e)), handledEventsToo: true);
         row.DragOver += Row_DragOver;
         row.DragLeave += (_, _) => marker.Visibility = Visibility.Collapsed;
         row.Drop += Row_Drop;
@@ -207,7 +208,7 @@ public sealed class GamesStrip : Grid
         {
             if (e.LeftButton != MouseButtonState.Pressed || downTile != cell || dragging) return;
             var p = e.GetPosition(this);
-            if (Math.Abs(p.X - downAt.X) > 8 || Math.Abs(p.Y - downAt.Y) > 8) StartDrag(g, cell);
+            if (Math.Abs(p.X - downAt.X) > 8 || Math.Abs(p.Y - downAt.Y) > 8) StartDrag(cell, e.GetPosition(row));
         };
         cell.MouseLeftButtonUp += (_, _) =>
         {
@@ -231,21 +232,37 @@ public sealed class GamesStrip : Grid
 
     // ------------------------------------------------------------------ drag to reorder
 
-    void StartDrag(GameInfo g, FrameworkElement cell)
+    LiveReorder? reorder;
+
+    /// <summary>Lift the cover and carry it; the others slide aside as it passes them.</summary>
+    void StartDrag(FrameworkElement cell, Point at)
     {
         dragging = true;
         menuOpened(); // keep the notch open while dragging
-        cell.Opacity = 0.35;
-        try { DragDrop.DoDragDrop(cell, new DataObject(DragFormat, g.Key), DragDropEffects.Move); }
-        catch (Exception ex) { Log.Error("game drag", ex); }
-        finally
+        reorder ??= new LiveReorder(row, c => c.Tag is GameInfo, null, changed =>
         {
-            cell.Opacity = 1;
-            dragging = false;
             justDragged = true;
-            marker.Visibility = Visibility.Collapsed;
+            downTile = null;
             menuClosed();
-        }
+            if (!changed) { dragging = false; return; }
+            var order = row.Children.OfType<FrameworkElement>().Select(c => c.Tag).OfType<GameInfo>().Select(x => x.Key).ToList();
+            // Hidden games keep their place at the end
+            order.AddRange(GameLibrary.Current.Where(x => x.Hidden).Select(x => x.Key));
+            // Save once the cover has settled, so the rebuild doesn't cut its animation short
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(260) };
+            t.Tick += (_, _) => { t.Stop(); dragging = false; GameLibrary.SetOrder(order); };
+            t.Start();
+        }, lift: -3, liftScale: 1.06);
+        reorder.Begin(cell, at);
+    }
+
+    /// <summary>While carrying a cover near either end, the row scrolls along.</summary>
+    void EdgeScroll(MouseEventArgs e)
+    {
+        if (reorder?.Active != true) return;
+        double px = e.GetPosition(this).X;
+        if (px < 40) scroller.ScrollToHorizontalOffset(scroller.HorizontalOffset - 14);
+        else if (px > ActualWidth - 40) scroller.ScrollToHorizontalOffset(scroller.HorizontalOffset + 14);
     }
 
     /// <summary>Where a drop at this point would go: the index among the game tiles, and the x for the marker.</summary>

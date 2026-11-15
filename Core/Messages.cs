@@ -866,6 +866,28 @@ public static class MessageCenter
         Refilter();
     }
 
+    /// <summary>Clear every message the notch shows (they leave Windows' notification centre too, like dismissing one).</summary>
+    public static void DismissAll()
+    {
+        foreach (var m in Visible.ToList())
+        {
+            if (m.FromWindow) attention.Remove(m);
+            else
+            {
+                try { listener?.RemoveNotification(m.Id); } catch (Exception ex) { Log.Error("message dismiss", ex); }
+                all.RemoveAll(x => x.Id == m.Id);
+            }
+        }
+        Refilter();
+    }
+
+    /// <summary>Brim's message pop-ups are snoozed until this moment (null: not snoozed).</summary>
+    public static DateTime? MutedUntil
+    {
+        get => S.PopupsMutedUntil is DateTime t && t > DateTime.Now ? t : null;
+        set { S.PopupsMutedUntil = value; SettingsStore.Save(); Changed?.Invoke(); }
+    }
+
     public static void DismissApp(string app)
     {
         foreach (var m in all.Where(x => x.App == app).ToList())

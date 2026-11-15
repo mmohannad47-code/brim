@@ -198,7 +198,11 @@ sealed class NotesView : Grid
 
     void UpdateHint() => hint.Visibility = box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-    void Clear()
+    public bool IsEmpty => box.Text.Length == 0;
+
+    public void CopyAll() { try { Clipboard.SetText(box.Text); Status("Copied ✓"); } catch { } }
+
+    public void Clear()
     {
         if (box.Text.Length == 0) return;
         // Keep what was there, in case it was cleared by mistake

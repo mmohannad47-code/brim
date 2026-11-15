@@ -42,15 +42,15 @@ The small pill at the top of the screen. **Point at it** (or press **Ctrl+Alt+N*
 |---|---|
 | **Home** | What's playing (Spotify, YouTube, any app with media controls) with cover art, a seek bar, controls and synced lyrics, plus the date, CPU, memory, connected devices' batteries and volume. |
 | **Shortcuts** | Up to 12 apps, folders or websites. Drag an app onto the notch to add it; right-click to remove. The first 9 open with **Ctrl+Alt+1…9**. |
-| **Games** | Every game you have installed, with cover art: Steam, Epic, GOG, Riot, EA, Ubisoft, Battle.net, Xbox, and game folders on any drive. New installs appear by themselves. Right-click a game to launch with DirectX/Vulkan, pick a different exe, change the cover or uninstall it. |
-| **Messages** | Notifications from Discord, Teams, Outlook, WhatsApp and other chat and mail apps. Click one to open it; right-click to mute a person or app. Turn on **Settings › Messages › Only pop up in the notch** to stop Windows' own corner pop-up for those apps. |
+| **Games** | Every game you have installed, with cover art: Steam, Epic, GOG, Riot, EA, Ubisoft, Battle.net, Xbox, and game folders on any drive. New installs appear by themselves. Right-click a game to launch with DirectX/Vulkan, pick a different exe, change the cover or uninstall it. Drag covers to reorder them; right-click the tab to look for new games now. |
+| **Messages** | Notifications from Discord, Teams, Outlook, WhatsApp and other chat and mail apps. Click one to open it; right-click to mute a person or app. Right-click the tab to clear all messages or snooze pop-ups for an hour or until tomorrow. Turn on **Settings › Messages › Only pop up in the notch** to stop Windows' own corner pop-up for those apps. |
 | **Notes** | A page to type anything. Click the tab and start typing; it saves as you type. |
 | **Shelf** | Drop files on the notch to park them, then drag them out later. |
-| **Clipboard** | The last 40 things you copied. Click to copy again. |
+| **Clipboard** | The last 40 things you copied. Click to copy again. Right-click the tab to clear it all (pinned items can stay). |
 | **Controls** | Wi-Fi, Bluetooth, mic, volume, output device and brightness. |
 | **Timer** | A focus timer; the notch counts down and pops out when time's up. |
 
-Choose which tabs to show, and their order, in **Settings › Notch**. The notch can sit at the left, centre or right, look like a notch or a floating island, and hides itself in fullscreen games and videos (only on the screen the game covers). While music plays, the closed notch shows the line being sung (turn off in **Settings › Notch › Lyrics**). Turn on **Settings › Notch › Hide while an app covers it** to tuck it away while an app is maximised or a window sits under it (smaller windows elsewhere leave it showing). With more than one monitor, **Settings › Notch › Screen › Every screen** puts a notch on each of them.
+Choose which tabs to show, and their order, in **Settings › Notch**, or just drag a tab left or right in the notch. Right-click the Notes tab to copy or clear the page. The notch can sit at the left, centre or right, look like a notch or a floating island, and hides itself in fullscreen games and videos (only on the screen the game covers). While music plays, the closed notch shows the line being sung (turn off in **Settings › Notch › Lyrics**). Turn on **Settings › Notch › Hide while an app covers it** to tuck it away while an app is maximised or a window sits under it (smaller windows elsewhere leave it showing). With more than one monitor, **Settings › Notch › Screen › Every screen** puts a notch on each of them.
 
 It also pops out briefly for song changes, new messages, muting or unmuting your sound or mic, charging and headphones connecting.
 

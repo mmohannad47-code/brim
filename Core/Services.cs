@@ -235,6 +235,13 @@ public static class ClipboardHistory
         Changed();
     }
 
+    /// <summary>Empty the history; pinned items stay unless <paramref name="pinnedToo"/>.</summary>
+    public static void Clear(bool pinnedToo)
+    {
+        foreach (var item in Items.Where(i => pinnedToo || !i.Pinned).ToList()) Items.Remove(item);
+        Changed();
+    }
+
     /// <summary>Ctrl+Alt+V: paste what's on the clipboard as plain text (no fonts, colours or links).</summary>
     public static async void PastePlain()
     {

@@ -16,6 +16,65 @@ namespace Brim.Core;
 public static class Snapshot
 {
     /// <summary>`--lyrics-snapshot dir`: the closed and open notch with a song's lyrics (a pretend song; nothing plays).</summary>
+    /// <summary>`--drag-snapshot dir`: a notch tab and a dock icon picked up, carried and let go, photographed along the way.</summary>
+    public static async Task DragShots(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        SettingsStore.ReadOnly = true;
+        var s = SettingsStore.Current;
+        s.DockReserve = false; s.DockAutoHide = false; s.HideInFullscreen = false;
+        ThemeManager.Apply();
+
+        var notch = new NotchWindow();
+        notch.Show();
+        await Task.Delay(300);
+        notch.Left = -4000;
+        notch.DebugOpen("Apps");
+        await Task.Delay(900);
+        notch.DebugTabDrag(95);
+        await Task.Delay(90);
+        Save(notch, Path.Combine(folder, "tabs-1-sliding.png"));
+        await Task.Delay(400);
+        Save(notch, Path.Combine(folder, "tabs-2-carried.png"));
+        notch.DebugTabDrag(null);
+        await Task.Delay(110);
+        Save(notch, Path.Combine(folder, "tabs-3-settling.png"));
+        await Task.Delay(400);
+        Save(notch, Path.Combine(folder, "tabs-4-dropped.png"));
+        notch.Close();
+
+        var dock = new DockWindow();
+        dock.Show();
+        await Task.Delay(1500);
+        dock.Left = -4000;
+        var r = dock.DebugReorder(out var first, out var host);
+        if (r != null && first != null && host != null)
+        {
+            var p0 = first.TranslatePoint(new Point(first.ActualWidth / 2, first.ActualHeight / 2), host);
+            r.Begin(first, p0);
+            r.Drag(new Point(p0.X + 100, p0.Y));
+            await Task.Delay(90);
+            Save(dock, Path.Combine(folder, "dock-1-sliding.png"));
+            await Task.Delay(400);
+            Save(dock, Path.Combine(folder, "dock-2-carried.png"));
+            var log = new System.Text.StringBuilder();
+            void Probe(string when)
+            {
+                if (VisualTreeHelper.GetChildrenCount(host) == 0) return;
+                for (int i = 0; i < host.Children.Count; i++)
+                    log.AppendLine($"{when} #{i}: {LiveReorder.Probe((FrameworkElement)host.Children[i])}");
+            }
+            Probe("carried");
+            r.End();
+            Probe("just let go");
+            await Task.Delay(500);
+            Probe("500 ms later");
+            File.WriteAllText(Path.Combine(folder, "dock-probe.txt"), log.ToString());
+            Save(dock, Path.Combine(folder, "dock-3-dropped.png")); // (off-screen pictures can lag behind: dock-probe.txt has the real values)
+        }
+        dock.Close();
+    }
+
     public static async Task LyricsShots(string folder)
     {
         Directory.CreateDirectory(folder);

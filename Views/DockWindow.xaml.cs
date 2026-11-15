@@ -740,40 +740,46 @@ public partial class DockWindow : Window
         pressAt = e.GetPosition(Apps);
     }
 
+    LiveReorder? reorder;
+    Panel? reorderHost;
+    internal LiveReorder? DebugReorder(out FrameworkElement? first, out Panel? host)
+    {
+        first = apps.Count > 0 ? Apps.ItemContainerGenerator.ContainerFromIndex(0) as FrameworkElement : null;
+        host = first == null ? null : VisualTreeHelper.GetParent(first) as Panel;
+        if (host == null) return null;
+        return new LiveReorder(host, _ => true, (_, from, to) => apps.Move(from, to), _ => { }, lift: -6, liftScale: 1.15);
+    }
+
     void App_DragMove(object sender, MouseEventArgs e)
     {
-        if (pressed == null || e.LeftButton != MouseButtonState.Pressed) return;
-        var at = e.GetPosition(Apps);
-        if (!dragging)
+        if (pressed == null || dragging || e.LeftButton != MouseButtonState.Pressed) return;
+        if (Math.Abs(e.GetPosition(Apps).X - pressAt.X) < 8) return;
+        // Past the threshold: lift the icon and carry it (the others slide aside as it passes them)
+        if (Apps.ItemContainerGenerator.ContainerFromItem(pressed) is not FrameworkElement box || VisualTreeHelper.GetParent(box) is not Panel host) return;
+        dragging = true;
+        previewDelay.Stop();
+        WindowPreview.HideNow();
+        if (reorderHost != host) reorder = null; // the icon row was rebuilt
+        reorderHost = host;
+        reorder ??= new LiveReorder(host, _ => true, (_, from, to) => apps.Move(from, to), changed =>
         {
-            if (Math.Abs(at.X - pressAt.X) < 8) return;
-            dragging = true;
-            previewDelay.Stop();
-            WindowPreview.HideNow();
-        }
-        // Which slot is the pointer over?
-        int from = apps.IndexOf(pressed), to = from;
-        for (int i = 0; i < apps.Count; i++)
-        {
-            if (Apps.ItemContainerGenerator.ContainerFromIndex(i) is not FrameworkElement c) continue;
-            var left = c.TranslatePoint(new Point(0, 0), Apps).X;
-            if (at.X >= left && at.X < left + c.ActualWidth) { to = i; break; }
-        }
-        if (from >= 0 && to != from) apps.Move(from, to);
+            dragging = false;
+            pressed = null;
+            if (changed)
+            {
+                S.DockOrder = apps.Select(a => a.Key).ToList();
+                SettingsStore.Save();
+            }
+            // The button would treat letting go as a click; skip that one
+            swallowClick = true;
+            Dispatcher.BeginInvoke(new Action(() => swallowClick = false), DispatcherPriority.Input);
+        }, lift: -6, liftScale: 1.15);
+        reorder.Begin(box, e.GetPosition(host));
     }
 
     void App_DragEnd(object sender, MouseButtonEventArgs e)
     {
-        pressed = null;
-        if (!dragging) return;
-        dragging = false;
-        S.DockOrder = apps.Select(a => a.Key).ToList();
-        SettingsStore.Save();
-        // The button would treat letting go as a click; skip that one
-        swallowClick = true;
-        Dispatcher.BeginInvoke(new Action(() => swallowClick = false), DispatcherPriority.Input);
-        e.Handled = true;
-        ((UIElement)sender).ReleaseMouseCapture();
+        if (!dragging) pressed = null;
     }
 
     // ---------- drop files on an app to open them with it

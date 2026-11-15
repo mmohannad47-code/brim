@@ -176,6 +176,44 @@ public partial class NotchWindow : Window
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && typing) { StopTyping(); Collapse(); e.Handled = true; } };
         // Clicking the Notes tab puts the cursor in the page straight away. Only on a click: a notch that merely
         // opens on hover with Notes already showing still leaves the keyboard with your game or app.
+        // Drag a tab sideways to move it (it lifts and the others slide aside)
+        foreach (var tab in AllTabs)
+        {
+            var t = tab;
+            t.PreviewMouseLeftButtonDown += (_, e) => { tabPressed = t; tabPressAt = e.GetPosition(TabsRow); };
+            t.PreviewMouseMove += (_, e) =>
+            {
+                if (tabPressed != t || e.LeftButton != MouseButtonState.Pressed || tabReorder?.Active == true) return;
+                if (Math.Abs(e.GetPosition(TabsRow).X - tabPressAt.X) < 6) return;
+                holdOpen++;
+                tabReorder ??= new LiveReorder(TabsRow, c => c is RadioButton, null, TabsMoved, lift: 0, liftScale: 1.15);
+                tabReorder.Begin(t, e.GetPosition(TabsRow));
+            };
+        }
+        TabMsgs.MouseRightButtonUp += (_, e) => { e.Handled = true; MessagesTabMenu(); };
+        TabNotes.MouseRightButtonUp += (_, e) => { e.Handled = true; NotesTabMenu(); };
+        TabGames.MouseRightButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            var menu = new ContextMenu();
+            menu.Items.Add(MakeItem("Look for new games now", () => { _ = GameLibrary.Refresh(); Note("Looking for new games…"); }));
+            ShowMenu(menu, TabGames);
+        };
+        // Right-click the Clipboard tab: clear the history in one go
+        TabClip.MouseRightButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            var menu = new ContextMenu();
+            int pinned = ClipboardHistory.Items.Count(i => i.Pinned), all = ClipboardHistory.Items.Count;
+            if (all == 0) menu.Items.Add(new MenuItem { Header = "The clipboard history is empty", IsEnabled = false });
+            else if (pinned == 0) menu.Items.Add(MakeItem("Clear all", () => ClipboardHistory.Clear(pinnedToo: true)));
+            else
+            {
+                if (all > pinned) menu.Items.Add(MakeItem($"Clear all but the {pinned} pinned", () => ClipboardHistory.Clear(pinnedToo: false)));
+                menu.Items.Add(MakeItem("Clear all, pinned too", () => ClipboardHistory.Clear(pinnedToo: true)));
+            }
+            ShowMenu(menu, TabClip);
+        };
         TabNotes.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
         {
             if (mode == Mode.Open && TabNotes.IsChecked == true && NotesPanel.Children.Count > 0 && NotesPanel.Children[0] is NotesView notes)
@@ -1411,6 +1449,75 @@ public partial class NotchWindow : Window
             ((App)Application.Current).RefreshSettingsWindow();
         }));
         ShowMenu(menu, (UIElement)sender);
+    }
+
+    // ---------- tab right-click menus and dragging tabs into a new order
+
+    RadioButton? tabPressed;
+    Point tabPressAt;
+    LiveReorder? tabReorder;
+
+    /// <summary>Snapshot check: pick up the first tab and carry it <paramref name="dx"/> to the right (null: let go).</summary>
+    internal void DebugTabDrag(double? dx)
+    {
+        tabReorder ??= new LiveReorder(TabsRow, c => c is RadioButton, null, _ => { }, lift: 0, liftScale: 1.15);
+        if (dx == null) { tabReorder.End(); return; }
+        if (!tabReorder.Active)
+        {
+            var first = TabsRow.Children.OfType<RadioButton>().FirstOrDefault();
+            if (first == null) return;
+            debugDragStart = new Point(System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(first).X + first.ActualWidth / 2, 10);
+            tabReorder.Begin(first, debugDragStart);
+        }
+        tabReorder.Drag(new Point(debugDragStart.X + dx.Value, 10));
+    }
+
+    Point debugDragStart;
+
+    void TabsMoved(bool changed)
+    {
+        tabPressed = null;
+        holdOpen = Math.Max(0, holdOpen - 1);
+        if (!Body.IsMouseOver) leaveTimer.Start();
+        if (!changed) return;
+        var ids = NotchCatalog.Tabs.Select(t => t.id).ToList();
+        S.NotchTabs = TabsRow.Children.OfType<RadioButton>().Select(r => ids.FirstOrDefault(id => TabFor(id) == r)).OfType<string>().ToList();
+        SettingsStore.Save();
+        Log.Note("tabs", "new order: " + string.Join(", ", S.NotchTabs));
+        // The notches on other screens and the settings page follow (after this one has settled)
+        Dispatcher.BeginInvoke(new Action(() => ((App)Application.Current).ApplyAll()), DispatcherPriority.ApplicationIdle);
+        ((App)Application.Current).RefreshSettingsWindow();
+    }
+
+    void MessagesTabMenu()
+    {
+        var menu = new ContextMenu();
+        var clear = MakeItem("Clear all messages", MessageCenter.DismissAll);
+        clear.IsEnabled = MessageCenter.Visible.Count > 0;
+        menu.Items.Add(clear);
+        menu.Items.Add(new Separator());
+        if (MessageCenter.MutedUntil is DateTime until)
+            menu.Items.Add(MakeItem($"Pop-ups snoozed until {(until.Date == DateTime.Today ? until.ToString("HH:mm") : until.ToString("ddd HH:mm"))}: turn back on",
+                () => { MessageCenter.MutedUntil = null; Note("Message pop-ups are back on"); }));
+        else
+        {
+            menu.Items.Add(MakeItem("Snooze pop-ups for 1 hour", () => { MessageCenter.MutedUntil = DateTime.Now.AddHours(1); Note("No pop-ups for an hour"); }));
+            menu.Items.Add(MakeItem("Snooze pop-ups until tomorrow", () => { MessageCenter.MutedUntil = DateTime.Today.AddDays(1).AddHours(8); Note("No pop-ups until 08:00 tomorrow"); }));
+        }
+        ShowMenu(menu, TabMsgs);
+    }
+
+    void NotesTabMenu()
+    {
+        if (NotesPanel.Children.Count == 0) NotesPanel.Children.Add(new NotesView(EnableTyping));
+        if (NotesPanel.Children[0] is not NotesView notes) return;
+        var menu = new ContextMenu();
+        var copy = MakeItem("Copy all", () => { notes.CopyAll(); Note("Notes copied ✓"); });
+        var clear = MakeItem("Clear the page", () => { notes.Clear(); Note("Notes cleared (the old page is in notes.txt.bak)"); });
+        copy.IsEnabled = clear.IsEnabled = !notes.IsEmpty;
+        menu.Items.Add(copy);
+        menu.Items.Add(clear);
+        ShowMenu(menu, TabNotes);
     }
 
     static MenuItem MakeItem(string header, Action action)

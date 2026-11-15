@@ -125,6 +125,8 @@ public class AppSettings
     public bool AccentFromWallpaper { get; set; }
     /// <summary>Windows' own accent colour (Start, taskbar, title bars, Settings) follows Brim's</summary>
     public bool WindowsAccent { get; set; }
+    /// <summary>Message pop-ups snoozed until then (right-click the Messages tab)</summary>
+    public DateTime? PopupsMutedUntil { get; set; }
     /// <summary>Colour of the closed notch (null: the theme's)</summary>
     public string? NotchColor { get; set; }
     /// <summary>Colour of the dock / taskbar (null: the theme's)</summary>
