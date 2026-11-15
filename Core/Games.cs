@@ -1019,6 +1019,17 @@ public static class GameLibrary
 
     // ------------------------------------------------------------------ cover art
 
+    internal static int CoverCount => covers.Count(c => c.Value != null);
+
+    /// <summary>Let go of the cover pictures (they're on disk and load again when the Games tab opens). Games that
+    /// have no cover stay remembered, so nothing is downloaded again.</summary>
+    internal static int ReleaseCovers()
+    {
+        var drop = covers.Where(c => c.Value != null).Select(c => c.Key).ToList();
+        foreach (var k in drop) covers.Remove(k);
+        return drop.Count;
+    }
+
     public static async Task<ImageSource?> Cover(GameInfo g, int decodeWidth = 160)
     {
         if (covers.TryGetValue(g.Key, out var hit)) return hit;

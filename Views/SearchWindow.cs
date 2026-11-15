@@ -229,6 +229,15 @@ public sealed class SearchWindow : Window
 
     static readonly Dictionary<string, ImageSource?> appIcons = new();
 
+    /// <summary>Forget the app icons (only while search is closed: they load again the next time it opens).</summary>
+    internal static int ReleaseIcons()
+    {
+        if (open != null) return 0;
+        int n = appIcons.Count;
+        appIcons.Clear();
+        return n;
+    }
+
     static ImageSource? AppIcon(string target)
     {
         if (appIcons.TryGetValue(target, out var hit)) return hit;

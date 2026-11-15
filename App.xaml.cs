@@ -31,8 +31,34 @@ public partial class App : Application
     /// <summary>Compact the heap and return unused pages shortly after a burst of UI work (closing a panel or window).</summary>
     public void ScheduleTrim()
     {
+        busyAt = DateTime.Now;
+        picturesReleased = false;
         trimTimer.Stop();
         trimTimer.Start();
+    }
+
+    DateTime busyAt = DateTime.Now;
+    bool picturesReleased;
+    int idleTicks;
+
+    /// <summary>
+    /// Every minute: hand unused pages back to Windows. Once Brim has been quiet for 3 minutes (notch shut, no
+    /// Settings or Wallpapers window), also let go of cached icons and game covers. Every half hour, a `[memory]`
+    /// line in the log says where the memory goes.
+    /// </summary>
+    void IdleTrim()
+    {
+        idleTicks++;
+        bool quiet = settings == null && gallery == null && notch?.IsOpen != true && DateTime.Now - busyAt > TimeSpan.FromMinutes(3);
+        if (quiet && !picturesReleased)
+        {
+            picturesReleased = true;
+            int n = MemoryCare.Release();
+            Native.TrimMemory(collect: true);
+            if (n >= 10) Log.Note("memory", $"quiet: let go of {n} cached pictures · {MemoryCare.Describe()}");
+        }
+        else Native.TrimMemory(collect: false);
+        if (idleTicks % 30 == 10) Log.Note("memory", MemoryCare.Describe()); // 10 minutes in, then every half hour
     }
 
     DateTime snipUntil;
@@ -373,7 +399,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -384,6 +410,23 @@ public partial class App : Application
                 {
                     switch (e.Args[0])
                     {
+                        case "--memory-test":
+                        {
+                            // What the picture caches cost once everything has been opened, and what letting go gets back
+                            Native.TrimMemory(collect: true);
+                            sb.AppendLine("start:         " + MemoryCare.Describe());
+                            foreach (var a in AppCatalog.All()) AppCatalog.Icon(a);
+                            foreach (var p in Uninstaller.List()) _ = p.Icon;
+                            await GameLibrary.Refresh();
+                            foreach (var g in GameLibrary.Current) await GameLibrary.Cover(g);
+                            sb.AppendLine("all loaded:    " + MemoryCare.Describe());
+                            Native.TrimMemory(collect: true);
+                            sb.AppendLine("trimmed only:  " + MemoryCare.Describe());
+                            int n = MemoryCare.Release();
+                            Native.TrimMemory(collect: true);
+                            sb.AppendLine($"let go of {n}: " + MemoryCare.Describe());
+                            break;
+                        }
                         case "--hotkey-test":
                         {
                             // A shortcut another app already has: Brim must still get it. (Ctrl+Shift+Alt+F12, which
@@ -913,7 +956,7 @@ public partial class App : Application
         shell.Start();
         HookWindowEvents();
         trimTimer.Tick += (_, _) => { trimTimer.Stop(); Native.TrimMemory(collect: true); };
-        idleTrim.Tick += (_, _) => Native.TrimMemory(collect: false);
+        idleTrim.Tick += (_, _) => IdleTrim();
         idleTrim.Start();
 
         // Everything below isn't needed to draw the notch and dock, so it starts once they're on screen

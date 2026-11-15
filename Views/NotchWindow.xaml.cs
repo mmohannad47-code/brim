@@ -529,6 +529,8 @@ public partial class NotchWindow : Window
 
     internal void DebugPeek() { Collapse(animate: false); Peek(); }
 
+    public bool IsOpen => mode == Mode.Open;
+
     public void ToggleOpen()
     {
         if (fullscreenHidden) return;

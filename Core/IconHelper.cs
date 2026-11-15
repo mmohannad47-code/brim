@@ -13,6 +13,14 @@ namespace Brim.Core;
 public static class IconHelper
 {
     static readonly Dictionary<string, ImageSource?> cache = new(StringComparer.OrdinalIgnoreCase);
+
+    internal static int CacheCount => cache.Count;
+
+    /// <summary>
+    /// Forget the cached icons (each 96 px icon is about 36 KB, and Settings' app lists cache hundreds). Icons on
+    /// screen stay alive through what shows them; the rest are made again, in a few ms, when next needed.
+    /// </summary>
+    internal static int ReleaseCache() { int n = cache.Count; cache.Clear(); return n; }
     static Native.IImageList? jumbo;
 
     [ComImport, Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
