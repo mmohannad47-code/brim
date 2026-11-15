@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
@@ -31,7 +32,22 @@ public sealed class MessageWindow : IDisposable
         Native.AddClipboardFormatListener(src.Handle);
     }
 
-    public bool Register(int id, uint mods, uint vk) => Native.RegisterHotKey(src.Handle, id, mods | Native.MOD_NOREPEAT, vk);
+    /// <summary>
+    /// A global shortcut. Windows gives each key combination to the first app that asks, and on many PCs something
+    /// (graphics-card software, mouse and keyboard apps, Teams…) already has some of Brim's. Then Brim listens for
+    /// the keys itself (<see cref="KeyListener"/>), so the shortcut works on every PC, not just the ones where it was free.
+    /// </summary>
+    public bool Register(int id, uint mods, uint vk, string name)
+    {
+        if (Native.RegisterHotKey(src.Handle, id, mods | Native.MOD_NOREPEAT, vk)) return true;
+        int err = Marshal.GetLastWin32Error();
+        Log.Note("hotkey", $"{name}: Windows said no ({(err == 1409 ? "another app already uses it" : "error " + err)}), so Brim listens for it itself");
+        listener ??= new KeyListener(id2 => src.Dispatcher.BeginInvoke(new Action(() => Hotkey?.Invoke(id2))));
+        listener.Add(id, mods, vk);
+        return false;
+    }
+
+    KeyListener? listener;
 
     IntPtr WndProc(IntPtr hwnd, int msg, IntPtr w, IntPtr l, ref bool handled)
     {
@@ -44,7 +60,82 @@ public sealed class MessageWindow : IDisposable
     {
         Native.RemoveClipboardFormatListener(src.Handle);
         for (int i = 1; i < 32; i++) Native.UnregisterHotKey(src.Handle, i);
+        listener?.Dispose();
         src.Dispose();
+    }
+}
+
+/// <summary>
+/// Watches the keyboard for the shortcuts another app got first. It runs on its own thread, so typing never
+/// waits on Brim's window work, and only exists on PCs where a shortcut was taken. A matching key press is
+/// kept for Brim (the other app doesn't also act on it).
+/// </summary>
+sealed class KeyListener : IDisposable
+{
+    record Combo(int Id, uint Mods, uint Vk);
+    volatile Combo[] combos = Array.Empty<Combo>();
+    readonly Action<int> pressed;
+    uint threadId;
+    uint held; // the key of a shortcut being held down (one press, however long it's held)
+    HookProc? proc; // kept alive while the hook is in place
+
+    delegate IntPtr HookProc(int code, IntPtr w, IntPtr l);
+    [StructLayout(LayoutKind.Sequential)] struct KBDLLHOOKSTRUCT { public uint vk, scan, flags, time; public IntPtr extra; }
+    [StructLayout(LayoutKind.Sequential)] struct MSG { public IntPtr hwnd; public uint message; public IntPtr w, l; public uint time; public int x, y; }
+    [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWindowsHookEx(int id, HookProc proc, IntPtr mod, uint thread);
+    [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);
+    [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
+    [DllImport("user32.dll")] static extern int GetMessage(out MSG msg, IntPtr hwnd, uint min, uint max);
+    [DllImport("user32.dll")] static extern bool PostThreadMessage(uint thread, uint msg, IntPtr w, IntPtr l);
+
+    public KeyListener(Action<int> pressed)
+    {
+        this.pressed = pressed;
+        var ready = new System.Threading.ManualResetEventSlim();
+        var t = new System.Threading.Thread(() =>
+        {
+            threadId = Native.GetCurrentThreadId();
+            proc = OnKey;
+            var hook = SetWindowsHookEx(13 /* WH_KEYBOARD_LL */, proc, Native.GetModuleHandle(null), 0);
+            if (hook == IntPtr.Zero) Log.Note("hotkey", "couldn't listen to the keyboard (error " + Marshal.GetLastWin32Error() + ")");
+            ready.Set();
+            while (GetMessage(out _, IntPtr.Zero, 0, 0) > 0) { } // (a low-level hook needs its thread waiting for messages)
+            if (hook != IntPtr.Zero) UnhookWindowsHookEx(hook);
+        }) { IsBackground = true, Name = "Brim shortcuts" };
+        t.Start();
+        ready.Wait(2000);
+    }
+
+    public void Add(int id, uint mods, uint vk) => combos = combos.Append(new Combo(id, mods, vk)).ToArray();
+
+    static bool Down(int vk) => GetAsyncKeyState(vk) < 0;
+
+    IntPtr OnKey(int code, IntPtr w, IntPtr l)
+    {
+        if (code >= 0)
+        {
+            var k = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(l);
+            int msg = w.ToInt32();
+            if (msg is 0x101 or 0x105 /* key up */) { if (k.vk == held) held = 0; }
+            else if (msg is 0x100 or 0x104 /* key down */)
+            {
+                uint mods = (Down(0x11) ? Native.MOD_CONTROL : 0) | (Down(0x12) ? Native.MOD_ALT : 0) |
+                            (Down(0x10) ? Native.MOD_SHIFT : 0) | (Down(0x5B) || Down(0x5C) ? Native.MOD_WIN : 0);
+                foreach (var c in combos)
+                {
+                    if (c.Vk != k.vk || c.Mods != mods) continue;
+                    if (held != k.vk) { held = k.vk; pressed(c.Id); }
+                    return new IntPtr(1);
+                }
+            }
+        }
+        return CallNextHookEx(IntPtr.Zero, code, w, l);
+    }
+
+    public void Dispose()
+    {
+        if (threadId != 0) PostThreadMessage(threadId, 0x12 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
     }
 }
 

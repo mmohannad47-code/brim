@@ -104,7 +104,7 @@ public partial class DockWindow : Window
     internal string DebugApps => string.Join("\n", apps.Select(a => $"{a.Title} | pinned {a.Pinned} | running {a.Running} ({a.Windows.Count} windows) | {a.Key}"));
 
     /// <summary>For `--dock-screens-test`.</summary>
-    internal string DebugState => $"screen '{ScreenId}', visible {IsVisible}, at {Left:0},{Top:0} {ActualWidth:0}x{ActualHeight:0}, {apps.Count} apps, fullscreen-hidden {fullscreen}";
+    internal string DebugState => $"screen '{ScreenId}', visible {IsVisible}, at {Left:0},{Top:0} {ActualWidth:0}x{ActualHeight:0}, {apps.Count} apps, fullscreen-hidden {fullscreen}, bar {docked}";
 
     public DockWindow()
     {

@@ -373,7 +373,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -384,6 +384,32 @@ public partial class App : Application
                 {
                     switch (e.Args[0])
                     {
+                        case "--hotkey-test":
+                        {
+                            // A shortcut another app already has: Brim must still get it. (Ctrl+Shift+Alt+F12, which
+                            // nothing uses; the first window takes it so the second one is refused.)
+                            const uint all = Native.MOD_CONTROL | Native.MOD_SHIFT | Native.MOD_ALT;
+                            using var first = new MessageWindow();
+                            using var second = new MessageWindow();
+                            int firstGot = 0, secondGot = 0;
+                            first.Hotkey += _ => firstGot++;
+                            second.Hotkey += _ => secondGot++;
+                            sb.AppendLine("first app gets it: " + first.Register(20, all, 0x7B, "test (first app)"));
+                            sb.AppendLine("Brim gets it from Windows: " + second.Register(20, all, 0x7B, "test (Brim)"));
+                            void Tap(byte vk, bool up) => Native.keybd_event(vk, 0, up ? 2u : 0u, UIntPtr.Zero);
+                            for (int n = 0; n < 2; n++)
+                            {
+                                Tap(0x11, false); Tap(0x10, false); Tap(0x12, false); Tap(0x7B, false);
+                                Tap(0x7B, true); Tap(0x12, true); Tap(0x10, true); Tap(0x11, true);
+                                await System.Threading.Tasks.Task.Delay(300);
+                            }
+                            sb.AppendLine($"pressed twice: Brim saw it {secondGot} times, the other app {firstGot} times");
+                            sb.AppendLine(secondGot == 2 && firstGot == 0 ? "PASS" : "FAIL");
+                            var mics = Audio.MicMuted;
+                            sb.AppendLine($"microphones: all muted {mics} (has a mic: {Audio.HasMic})");
+                            Audio.MicMuted = mics; // (the same state again: nothing changes, the log says how many it reached)
+                            break;
+                        }
                         case "--accent-test":
                         {
                             // Give Windows a colour, then give its own back: the values must match exactly
@@ -452,6 +478,15 @@ public partial class App : Application
                             d2.SetFullscreen(false);
                             await System.Threading.Tasks.Task.Delay(600);
                             sb.AppendLine("back: other " + d2.DebugState);
+                            // Full-width bar on both, then "Floating" in settings: both must go back to the pill
+                            d1.DebugDocked(); d2.DebugDocked();
+                            // (straight after: the dock's own refresh puts it back to a pill when nothing is maximised)
+                            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Loaded);
+                            sb.AppendLine("as bars:  main  " + d1.DebugState).AppendLine("          other " + d2.DebugState);
+                            S.DockWhenMaximized = "Floating";
+                            d1.ApplySettings(); d2.ApplySettings();
+                            await System.Threading.Tasks.Task.Delay(800);
+                            sb.AppendLine("floating: main  " + d1.DebugState).AppendLine("          other " + d2.DebugState);
                             d1.Close(); d2.Close();
                             break;
                         }                        case "--endtask-test":
@@ -844,14 +879,15 @@ public partial class App : Application
 
         messages = new MessageWindow();
         messages.Hotkey += OnHotkey;
-        messages.Register(1, Native.MOD_CONTROL | Native.MOD_ALT, 'N');
-        for (int i = 1; i <= 9; i++) messages.Register(1 + i, Native.MOD_CONTROL | Native.MOD_ALT, (uint)('0' + i));
-        messages.Register(11, Native.MOD_CONTROL | Native.MOD_ALT, 'H');
-        messages.Register(12, Native.MOD_CONTROL | Native.MOD_ALT, 'P');
-        messages.Register(13, Native.MOD_CONTROL | Native.MOD_ALT, 'C');
-        messages.Register(14, Native.MOD_CONTROL | Native.MOD_ALT, 'M');
-        messages.Register(15, Native.MOD_CONTROL, 0x20 /* Space */);
-        messages.Register(16, Native.MOD_CONTROL | Native.MOD_ALT, 'V');
+        const uint CtrlAlt = Native.MOD_CONTROL | Native.MOD_ALT;
+        messages.Register(1, CtrlAlt, 'N', "Ctrl+Alt+N (open the notch)");
+        for (int i = 1; i <= 9; i++) messages.Register(1 + i, CtrlAlt, (uint)('0' + i), $"Ctrl+Alt+{i} (shortcut {i})");
+        messages.Register(11, CtrlAlt, 'H', "Ctrl+Alt+H (desktop icons)");
+        messages.Register(12, CtrlAlt, 'P', "Ctrl+Alt+P (play/pause)");
+        messages.Register(13, CtrlAlt, 'C', "Ctrl+Alt+C (colour picker)");
+        messages.Register(14, CtrlAlt, 'M', "Ctrl+Alt+M (mute microphone)");
+        messages.Register(15, Native.MOD_CONTROL, 0x20 /* Space */, "Ctrl+Space (search)");
+        messages.Register(16, CtrlAlt, 'V', "Ctrl+Alt+V (paste as plain text)");
         WidgetWindow.WentOnTop += () => { notch?.EnsureTopmost(); foreach (var d in AllDocks) d.EnsureTopmost(); };
         AutoLook.Changed += () => ApplyAll();
         AutoLook.Start();

@@ -64,10 +64,57 @@ public static class Audio
 
     public static bool HasMic { get { EnsureMic(); return micVolume != null; } }
 
+    /// <summary>
+    /// Every microphone, not just the default one: desktops often have a webcam mic, a headset and a different
+    /// "communications" mic (the one Discord and Teams use), and muting only the default left the others on.
+    /// Muted means every active microphone is muted.
+    /// </summary>
     public static bool MicMuted
     {
-        get { EnsureMic(); bool m = false; try { micVolume?.GetMute(out m); } catch { } return m; }
-        set { EnsureMic(); var g = Guid.Empty; try { micVolume?.SetMute(value, ref g); } catch { } }
+        get
+        {
+            var all = Microphones();
+            if (all.Count == 0) { EnsureMic(); bool m = false; try { micVolume?.GetMute(out m); } catch { } return m; }
+            foreach (var mic in all)
+            {
+                bool m = false;
+                try { mic.GetMute(out m); } catch { }
+                if (!m) return false;
+            }
+            return true;
+        }
+        set
+        {
+            var g = Guid.Empty;
+            var all = Microphones();
+            int done = 0;
+            foreach (var mic in all) try { if (mic.SetMute(value, ref g) >= 0) done++; } catch { } // (S_FALSE: it already was)
+            EnsureMic();
+            try { micVolume?.SetMute(value, ref g); } catch { }
+            Log.Note("mic", $"{(value ? "muted" : "unmuted")} {done} of {all.Count} microphones");
+        }
+    }
+
+    static List<IAudioEndpointVolume> mics = new();
+    static DateTime micsAt;
+
+    static List<IAudioEndpointVolume> Microphones()
+    {
+        if ((DateTime.UtcNow - micsAt).TotalSeconds < 5) return mics;
+        var list = new List<IAudioEndpointVolume>();
+        try
+        {
+            if (Enumerator().EnumAudioEndpoints(1 /* capture */, 1 /* active */, out var coll) == 0 && coll != null)
+            {
+                coll.GetCount(out uint count);
+                for (uint i = 0; i < count; i++)
+                    if (coll.Item(i, out var dev) == 0 && dev != null && Activate<IAudioEndpointVolume>(dev) is { } v) list.Add(v);
+            }
+        }
+        catch (Exception ex) { Log.Error("microphones", ex); }
+        mics = list;
+        micsAt = DateTime.UtcNow;
+        return list;
     }
 
     public static float Peak
