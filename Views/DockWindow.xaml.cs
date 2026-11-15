@@ -450,17 +450,25 @@ public partial class DockWindow : Window
     public void CheckReservation()
     {
         if (hwnd == IntPtr.Zero || S.DockAutoHide || !S.DockReserve || !IsVisible || fullscreen || ActualHeight <= 0) return;
-        var mon = Native.ScreenOrPrimary(ScreenId);
-        var mi = new Native.MONITORINFO { cbSize = Marshal.SizeOf<Native.MONITORINFO>() };
-        if (!Native.GetMonitorInfo(mon.Handle, ref mi)) return;
-        int want = (int)Math.Ceiling(ActualHeight * Dpi());
-        int have = mi.rcMonitor.Bottom - mi.rcWork.Bottom;
-        if (appBar && have >= want - 2) { reservationOk = true; return; }
+        if (!StripShort(out int have, out int want)) { reservationOk = true; return; }
         if (reservationOk) Log.Note("dock", $"strip for the dock wasn't reserved (had {have}px, needs {want}px): reserving it again");
         reservationOk = false;
         if (appBar) RemoveAppBar();
         SetupAppBar();
     }
+
+    /// <summary>The work area on this dock's screen doesn't leave room for the dock (or nothing is reserved).</summary>
+    bool StripShort(out int have, out int want)
+    {
+        have = want = 0;
+        var mi = new Native.MONITORINFO { cbSize = Marshal.SizeOf<Native.MONITORINFO>() };
+        if (!Native.GetMonitorInfo(Native.ScreenOrPrimary(ScreenId).Handle, ref mi)) return false;
+        want = (int)Math.Ceiling(ActualHeight * Dpi());
+        have = mi.rcMonitor.Bottom - mi.rcWork.Bottom;
+        return !appBar || have < want - 2;
+    }
+
+    bool posCheckQueued;
 
     IntPtr WndProc(IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled)
     {
@@ -468,7 +476,18 @@ public partial class DockWindow : Window
         {
             switch (w.ToInt32())
             {
-                case Native.ABN_POSCHANGED: SetupAppBar(); break;
+                // Another app bar moved (Explorer's taskbar, or the dock on another screen). Only reserve again when
+                // this screen's strip is actually gone: re-reserving every time had the docks on two screens setting
+                // each other off, over and over
+                case Native.ABN_POSCHANGED:
+                    if (posCheckQueued) break;
+                    posCheckQueued = true;
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        posCheckQueued = false;
+                        if (appBar && !S.DockAutoHide && S.DockReserve && StripShort(out _, out _)) SetupAppBar();
+                    }), DispatcherPriority.Background);
+                    break;
                 // ABN_FULLSCREENAPP is left alone on purpose: Windows' own guess disagreed with Brim's check
                 // (which also runs on every focus change) and the two made the dock flicker over videos
             }

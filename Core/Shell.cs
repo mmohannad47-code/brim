@@ -102,8 +102,13 @@ public static class TaskbarManager
         }
         if (applied != TaskbarMode.Dock) return;
         if (DateTime.Now < peekUntil) return;
-        // Explorer brings its taskbar back for Start and some shortcuts; with the dock on, it always goes again
-        if (Native.IsWindowVisible(p)) SetVisible(false);
+        // Explorer brings its taskbar back for Start and some shortcuts; with the dock on, it always goes again.
+        // Every screen's bar, not just the main one: Explorer also re-shows the other screens' bars on their own
+        // (when the dock's strip or auto-hide changes there), and those used to stay up
+        var shown = AllBars().Where(Native.IsWindowVisible).ToList();
+        if (shown.Count == 0) return;
+        if (!shown.Contains(p)) Log.Note("taskbar", "Windows showed its taskbar on another screen: hiding it again");
+        SetVisible(false);
     }
 
     /// <summary>Bring the real taskbar up for a moment, e.g. to reach tray icons.</summary>

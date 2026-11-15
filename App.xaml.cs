@@ -984,7 +984,7 @@ public partial class App : Application
                     dock.Show();
                 }
                 else dock.ApplySettings();
-                SyncDocks();
+                SyncDocks(apply: true);
             }
             else
             {
@@ -1234,7 +1234,9 @@ public partial class App : Application
     System.Collections.Generic.IEnumerable<DockWindow> AllDocks =>
         dock == null ? DockWindow.Others.ToList() : DockWindow.Others.Prepend(dock).ToList();
 
-    void SyncDocks()
+    /// <param name="apply">Settings changed: the other screens' docks take them too. (The 3-second screen check only
+    /// adds and removes docks; re-applying there cleared their icons and re-reserved their strip each time.)</param>
+    void SyncDocks(bool apply = false)
     {
         var others = dock != null && S.DockScreen == "*" ? Native.Screens().Where(s => !s.Primary).Select(s => s.Device).ToList() : new System.Collections.Generic.List<string>();
         foreach (var d in DockWindow.Others.Where(d => !others.Contains(d.ScreenDevice!, StringComparer.OrdinalIgnoreCase)).ToList())
@@ -1249,7 +1251,8 @@ public partial class App : Application
             d.Show();
             Log.Note("dock", $"added a dock on {device}");
         }
-        foreach (var d in DockWindow.Others) d.ApplySettings();
+        // New docks apply their settings once they load
+        if (apply) foreach (var d in DockWindow.Others.Where(d => d.IsLoaded)) d.ApplySettings();
     }
 
     // ---------- a notch on every screen ("Every screen" in Notch › Screen)
