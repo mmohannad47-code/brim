@@ -638,9 +638,57 @@ sealed class MusicWidget : Grid, IWidget
         right.Children.Add(controls);
         Children.Add(right);
 
+        // Synced lyrics under the song: the line being sung, then the next one (when the first fits on one row)
+        RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        lyricNow.TextWrapping = TextWrapping.Wrap;
+        lyricNow.TextTrimming = TextTrimming.CharacterEllipsis;
+        lyricNow.MaxHeight = 44;
+        lyricNext.TextTrimming = TextTrimming.CharacterEllipsis;
+        lyricNext.Margin = new Thickness(0, 3, 0, 0);
+        lyricBlock.Children.Add(lyricNow);
+        lyricBlock.Children.Add(lyricNext);
+        lyricNow.SizeChanged += (_, _) => lyricNext.Visibility = lyricNow.ActualHeight > 26 ? Visibility.Collapsed : Visibility.Visible;
+        SetRow(lyricBlock, 1);
+        SetColumnSpan(lyricBlock, 2);
+        Children.Add(lyricBlock);
+        lyricTimer.Tick += (_, _) => ShowLyric(force: false);
+
         M.Changed += Update;
-        Unloaded += (_, _) => M.Changed -= Update;
+        Lyrics.Changed += OnLyrics;
+        Unloaded += (_, _) => { M.Changed -= Update; Lyrics.Changed -= OnLyrics; lyricTimer.Stop(); };
+        Loaded += (_, _) => OnLyrics();
         Update();
+    }
+
+    readonly TextBlock lyricNow = WidgetFactory.T("", 14.5, weight: FontWeights.SemiBold);
+    readonly TextBlock lyricNext = WidgetFactory.T("", 12.5, true);
+    // A fixed height while a song has lyrics, so the card doesn't jump with every line
+    readonly StackPanel lyricBlock = new() { Margin = new Thickness(2, 12, 0, 0), Height = 50, Visibility = Visibility.Collapsed };
+    readonly DispatcherTimer lyricTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    int shownLyric = int.MinValue;
+
+    void OnLyrics()
+    {
+        // Only tick while there's something to keep in step
+        if (SettingsStore.Current.Lyrics && Lyrics.Lines != null) lyricTimer.Start(); else lyricTimer.Stop();
+        ShowLyric(force: true);
+    }
+
+    void ShowLyric(bool force)
+    {
+        var lines = SettingsStore.Current.Lyrics ? Lyrics.Lines : null;
+        bool show = lines != null && M.HasSession && !string.IsNullOrEmpty(M.Title);
+        lyricBlock.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (!show) { shownLyric = int.MinValue; return; }
+        int now = Lyrics.IndexAt(lines!, M.Position);
+        if (!force && now == shownLyric) return;
+        bool changed = now != shownLyric;
+        shownLyric = now;
+        var pos = M.Position;
+        lyricNow.Text = Lyrics.LineAt(pos) ?? "♪";
+        lyricNext.Text = Lyrics.LineAt(pos, 1) ?? "";
+        if (changed) lyricNow.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0.25, 1, TimeSpan.FromMilliseconds(220)));
     }
 
     static Button Btn(string glyph, Action a)
@@ -660,6 +708,7 @@ sealed class MusicWidget : Grid, IWidget
         artBrush.ImageSource = M.Art;
         play.Content = M.IsPlaying ? "" : "";
         Tick();
+        ShowLyric(force: false);
     }
 
     public void Tick()

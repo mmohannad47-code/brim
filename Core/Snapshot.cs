@@ -34,6 +34,11 @@ public static class Snapshot
         notch.DebugOpen("Home");
         await Task.Delay(900);
         Save(notch, Path.Combine(folder, "lyrics-open.png"));
+        var music = new WidgetWindow(new WidgetItem { Kind = WidgetKind.Music, X = -4000, Y = 0 });
+        music.Show();
+        await Task.Delay(700);
+        Save(music, Path.Combine(folder, "lyrics-widget.png"), Color.FromRgb(70, 90, 120));
+        music.Close();
         File.WriteAllText(Path.Combine(folder, "lyrics.txt"),
             $"{lines?.Count ?? 0} lines; at {MediaService.Fmt(MediaService.Instance.Position)}: \"{Lyrics.LineAt(MediaService.Instance.Position)}\" then \"{Lyrics.LineAt(MediaService.Instance.Position, 1)}\"");
         notch.Close();
@@ -64,6 +69,16 @@ public static class Snapshot
         notch.Left = -4000;
         await Task.Delay(500);
         Save(notch, Path.Combine(folder, "notch-closed.png"));
+        s.NotchColor = "#FFFFFF";
+        notch.ApplySettings();
+        await Task.Delay(400);
+        Save(notch, Path.Combine(folder, "notch-closed-white.png"));
+        s.NotchColor = "#4A1622";
+        notch.ApplySettings();
+        await Task.Delay(400);
+        Save(notch, Path.Combine(folder, "notch-closed-wine.png"));
+        s.NotchColor = null;
+        notch.ApplySettings();
 
         // Repro: "hide while an app is in front" -> app focused (tucked away) -> back on the desktop
         s.HideOverApps = true;
@@ -197,6 +212,13 @@ public static class Snapshot
         await Task.Delay(1500);
         dock.Left = -4000;
         Save(dock, Path.Combine(folder, "dock.png"));
+        s.DockColor = "#1E2A44";
+        dock.ApplySettings();
+        dock.Left = -4000;
+        await Task.Delay(400);
+        Save(dock, Path.Combine(folder, "dock-navy.png"));
+        s.DockColor = null;
+        dock.ApplySettings();
         dock.DebugDocked();
         await Task.Delay(600);
         dock.Left = -4000;

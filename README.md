@@ -71,7 +71,7 @@ Menus close by themselves once your pointer has left the menu and what you opene
 
 ### Widgets
 
-**Settings › Widgets**: clock, day, calendar, music, weather (set your city), PC stats, day progress, world clock, notes, and your own designs (*Design your own*). Drag widgets to move them; right-click to customise, lock, combine or remove.
+**Settings › Widgets**: clock, day, calendar, music (with the lyrics being sung), weather (set your city), PC stats, day progress, world clock, notes, and your own designs (*Design your own*). Drag widgets to move them; right-click to customise, lock, combine or remove.
 
 ### Wallpapers
 
@@ -87,7 +87,7 @@ Live wallpapers pause by themselves while a game or maximised window covers the 
 
 ### Looks
 
-**Settings › Look**: themes (Black, Graphite, Vampire, Synthwave, Matrix, Gold, Ember, Glacier and more), accent colours (any colour you like from the colour wheel), glass or solid surfaces, and matching colours from your album art. When Windows can't blur (transparency effects off, or energy saver on), glass becomes a plain tint instead of turning black.
+**Settings › Look**: themes (Black, Graphite, Vampire, Synthwave, Matrix, Gold, Ember, Glacier and more), accent colours (any colour you like from the colour wheel), glass or solid surfaces, and matching colours from your album art. Turn on **Windows uses this accent too** to give Start, the taskbar and title bars the same colour (turning it off gives Windows its own colour back). Under **Notch and taskbar** you can pick your own colour for the closed notch and for the dock. When Windows can't blur (transparency effects off, or energy saver on), glass becomes a plain tint instead of turning black.
 
 ### Keyboard shortcuts
 

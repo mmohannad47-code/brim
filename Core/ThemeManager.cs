@@ -91,6 +91,7 @@ public static class ThemeManager
         r["Brim.Track"] = B("#33FFFFFF");
         r["Brim.Accent"] = B(AccentColor);
         r["Brim.OnAccent"] = B(IsLight(AccentColor) ? Colors.Black : Colors.White);
+        WindowsAccent.SyncSoon(); // Windows' own accent follows, when that's switched on
 
         // Settings and Wallpapers windows follow the theme too
         var surface = Solid(Parse(p.Surface));

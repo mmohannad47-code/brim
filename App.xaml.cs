@@ -373,7 +373,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -384,6 +384,22 @@ public partial class App : Application
                 {
                     switch (e.Args[0])
                     {
+                        case "--accent-test":
+                        {
+                            // Give Windows a colour, then give its own back: the values must match exactly
+                            var before = WindowsAccent.Describe();
+                            sb.AppendLine("before:").AppendLine(before);
+                            S.WindowsAccent = true; S.Accent = "#E3122F"; S.WindowsAccentBefore = null; S.WindowsAccentApplied = null;
+                            WindowsAccent.Sync();
+                            sb.AppendLine("with Brim's #E3122F:").AppendLine(WindowsAccent.Describe());
+                            await System.Threading.Tasks.Task.Delay(1500);
+                            S.WindowsAccent = false;
+                            WindowsAccent.Sync();
+                            var after = WindowsAccent.Describe();
+                            sb.AppendLine("given back:").AppendLine(after);
+                            sb.AppendLine("identical to before: " + (after == before));
+                            break;
+                        }
                         case "--update-test":
                             Updater.PretendVersion = "0.0.1";
                             bool wouldInstall = false;

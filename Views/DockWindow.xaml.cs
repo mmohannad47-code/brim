@@ -205,11 +205,15 @@ public partial class DockWindow : Window
     {
         // A see-through bar would show wallpaper again when docked, so Clear becomes solid there
         var surface = docked && S.DockSurface == "Clear" ? "Solid" : S.DockSurface;
+        // Your own colour for the bar; on a light one the clock and labels turn dark so they stay readable
+        Color? own = S.DockColor != null && surface != "Clear" ? ThemeManager.Parse(S.DockColor) : null;
+        if (own is Color lc && ThemeManager.IsLight(lc)) { Bar.Resources["Brim.Text"] = Brushes.Black; Bar.Resources["Brim.Dim"] = new SolidColorBrush(Color.FromRgb(0x45, 0x45, 0x4C)); }
+        else { Bar.Resources.Remove("Brim.Text"); Bar.Resources.Remove("Brim.Dim"); }
         switch (surface)
         {
             case "Glass":
-                var c = ThemeManager.Parse(ThemeManager.Current.Surface);
-                Bar.Background = new SolidColorBrush(Backdrop.Tint(c, 0x66));
+                var c = own ?? ThemeManager.Parse(ThemeManager.Current.Surface);
+                Bar.Background = new SolidColorBrush(Backdrop.Tint(c, own != null ? (byte)0xA0 : (byte)0x66));
                 Bar.SetResourceReference(Border.BorderBrushProperty, "Brim.Stroke");
                 Bar.BorderThickness = docked ? new Thickness(0, 1, 0, 0) : new Thickness(1);
                 BarContent.Effect = null;
@@ -224,7 +228,8 @@ public partial class DockWindow : Window
                 backdrop = null;
                 break;
             default:
-                Bar.SetResourceReference(Border.BackgroundProperty, "Brim.Surface");
+                if (own is Color oc) Bar.Background = new SolidColorBrush(oc);
+                else Bar.SetResourceReference(Border.BackgroundProperty, "Brim.Surface");
                 Bar.SetResourceReference(Border.BorderBrushProperty, "Brim.Stroke");
                 Bar.BorderThickness = docked ? new Thickness(0, 1, 0, 0) : new Thickness(1);
                 BarContent.Effect = null;

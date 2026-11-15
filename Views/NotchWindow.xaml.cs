@@ -4,6 +4,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -300,9 +301,13 @@ public partial class NotchWindow : Window
             FaceText.Effect = null;
             return;
         }
+        // Your own colour for the closed notch (the open one keeps the theme's)
+        Color? own = mode != Mode.Open && S.NotchColor != null ? ThemeManager.Parse(S.NotchColor) : null;
+        ReadableOn(own);
         if (S.NotchSurface == "Solid")
         {
-            Body.SetResourceReference(Border.BackgroundProperty, "Brim.Surface");
+            if (own is Color oc) Body.Background = new SolidColorBrush(oc);
+            else Body.SetResourceReference(Border.BackgroundProperty, "Brim.Surface");
             FaceText.Effect = null;
             return;
         }
@@ -314,11 +319,33 @@ public partial class NotchWindow : Window
         }
         else
         {
-            var c = ThemeManager.Parse(ThemeManager.Current.Surface);
-            Body.Background = new SolidColorBrush(Backdrop.Tint(c, 0x70));
+            var c = own ?? ThemeManager.Parse(ThemeManager.Current.Surface);
+            Body.Background = new SolidColorBrush(Backdrop.Tint(c, own != null ? (byte)0xA0 : (byte)0x70));
             FaceText.Effect = null;
         }
         SyncBackdrop();
+    }
+
+    /// <summary>Dark text on a light notch colour, so the song, clock and pop-ups stay readable.</summary>
+    void ReadableOn(Color? own)
+    {
+        bool light = own is Color c && ThemeManager.IsLight(c);
+        foreach (var view in new FrameworkElement[] { ClosedView, PeekView, ActivityView })
+        {
+            if (light)
+            {
+                view.Resources["Brim.Text"] = Brushes.Black;
+                view.Resources["Brim.Dim"] = new SolidColorBrush(Color.FromRgb(0x45, 0x45, 0x4C));
+                view.SetValue(TextElement.ForegroundProperty, Brushes.Black); // text that just inherits the window's colour
+            }
+            else { view.Resources.Remove("Brim.Text"); view.Resources.Remove("Brim.Dim"); view.ClearValue(TextElement.ForegroundProperty); }
+        }
+        // The little curves where the notch meets the screen edge take the same colour
+        foreach (var ear in new[] { EarL, EarR })
+        {
+            if (own is Color oc) ear.Fill = new SolidColorBrush(oc);
+            else ear.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "Brim.Surface");
+        }
     }
 
     void SyncBackdrop()

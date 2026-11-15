@@ -555,7 +555,16 @@ public sealed class SettingsWindow : Window
             Row("Match my wallpaper", "Picks the accent from your wallpaper, including Wallpaper Engine scenes and videos, and follows it when it changes",
                 Switch(S.AccentFromWallpaper, v => { S.AccentFromWallpaper = v; Commit(); AutoLook.Check(force: true); Rebuild(); })),
             Pad(accents),
-            Row("Album colours", "Tint the notch with the colours of the cover that's playing", Switch(S.AlbumColors, v => { S.AlbumColors = v; Commit(); })));
+            Row("Album colours", "Tint the notch with the colours of the cover that's playing", Switch(S.AlbumColors, v => { S.AlbumColors = v; Commit(); })),
+            Row("Windows uses this accent too", "Start, the taskbar, title bars and Windows' own apps take Brim's accent. Turning this off gives Windows back the colour it had.",
+                Switch(S.WindowsAccent, v => { S.WindowsAccent = v; Commit(); WindowsAccent.Sync(); })));
+
+        Section("Notch and taskbar");
+        Card(
+            Row("Closed notch", "The notch's colour while it's closed (it opens in the theme's colours)",
+                ColourPicker(S.NotchColor, v => { S.NotchColor = v; Commit(); Rebuild(); }, v => { S.NotchColor = v; Commit(false); }, SurfaceColors, "Theme")),
+            Row("Dock / taskbar", "The colour of Brim's dock (Taskbar › Style › Dock)",
+                ColourPicker(S.DockColor, v => { S.DockColor = v; Commit(); Rebuild(); }, v => { S.DockColor = v; Commit(false); }, SurfaceColors, "Theme")));
 
         Section("Widgets");
         Card(Row("Default widget look", "Glass and Frost blur the wallpaper behind them. Each widget can also have its own look (Widgets page).",
@@ -1451,14 +1460,15 @@ public sealed class SettingsWindow : Window
         return b;
     }
 
-    FrameworkElement ColourPicker(string? current, Action<string?> set, Action<string?>? live = null)
+    FrameworkElement ColourPicker(string? current, Action<string?> set, Action<string?>? live = null, string[]? presets = null, string autoLabel = "Auto")
     {
+        presets ??= WidgetStyles.TextColors;
         var wp = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
-        var auto = PillBtn("Auto", () => set(null));
+        var auto = PillBtn(autoLabel, () => set(null));
         if (current == null) { auto.SetResourceReference(BackgroundProperty, "Brim.Accent"); auto.SetResourceReference(ForegroundProperty, "Brim.OnAccent"); }
         auto.Margin = new Thickness(0, 0, 8, 0);
         wp.Children.Add(auto);
-        foreach (var hex in WidgetStyles.TextColors)
+        foreach (var hex in presets)
         {
             var b = new Button { Width = 26, Height = 26, Margin = new Thickness(0, 0, 6, 0), Cursor = System.Windows.Input.Cursors.Hand, ToolTip = hex };
             b.Template = SwatchTemplate(ThemeManager.Parse(hex), string.Equals(current, hex, StringComparison.OrdinalIgnoreCase));
@@ -1466,7 +1476,7 @@ public sealed class SettingsWindow : Window
             b.Click += (_, _) => set(h);
             wp.Children.Add(b);
         }
-        if (current != null && !WidgetStyles.TextColors.Any(h => string.Equals(current, h, StringComparison.OrdinalIgnoreCase)))
+        if (current != null && !presets.Any(h => string.Equals(current, h, StringComparison.OrdinalIgnoreCase)))
         {
             var mine = new Button { Width = 26, Height = 26, Margin = new Thickness(0, 0, 6, 0), ToolTip = current };
             mine.Template = SwatchTemplate(ThemeManager.Parse(current), true);
@@ -2018,13 +2028,17 @@ public sealed class SettingsWindow : Window
         return card;
     }
 
+    /// <summary>Quick picks for the notch and dock colour (the wheel has every other one)</summary>
+    static readonly string[] SurfaceColors = { "#000000", "#1C1C1F", "#1E2A44", "#2E1A47", "#4A1622", "#14322B", "#FFFFFF" };
+
     static ControlTemplate SwatchTemplate(Color c, bool selected)
     {
         var t = new ControlTemplate(typeof(Button));
         var outer = new FrameworkElementFactory(typeof(Border));
         outer.SetValue(Border.CornerRadiusProperty, new CornerRadius(15));
-        outer.SetValue(Border.BorderThicknessProperty, new Thickness(selected ? 2 : 0));
-        outer.SetValue(Border.BorderBrushProperty, Brushes.White);
+        outer.SetValue(Border.BorderThicknessProperty, new Thickness(selected ? 2 : 1));
+        // A faint ring on the others, so dark colours still show on the dark card
+        outer.SetValue(Border.BorderBrushProperty, selected ? Brushes.White : new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)));
         outer.SetValue(Border.PaddingProperty, new Thickness(selected ? 3 : 0));
         var inner = new FrameworkElementFactory(typeof(Border));
         inner.SetValue(Border.CornerRadiusProperty, new CornerRadius(15));

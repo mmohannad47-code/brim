@@ -123,6 +123,16 @@ public class AppSettings
     public bool ClipRemember { get; set; }
     /// <summary>Accent colour follows the wallpaper (including Wallpaper Engine scenes)</summary>
     public bool AccentFromWallpaper { get; set; }
+    /// <summary>Windows' own accent colour (Start, taskbar, title bars, Settings) follows Brim's</summary>
+    public bool WindowsAccent { get; set; }
+    /// <summary>Colour of the closed notch (null: the theme's)</summary>
+    public string? NotchColor { get; set; }
+    /// <summary>Colour of the dock / taskbar (null: the theme's)</summary>
+    public string? DockColor { get; set; }
+    /// <summary>Windows' accent values from before Brim changed them, given back when that's turned off or Brim is uninstalled</summary>
+    public Dictionary<string, string>? WindowsAccentBefore { get; set; }
+    /// <summary>The colour Brim last gave Windows (so it only writes when it changes)</summary>
+    public string? WindowsAccentApplied { get; set; }
     /// <summary>Switch between a day and a night theme at sunrise and sunset</summary>
     public bool AutoTheme { get; set; }
     public string DayTheme { get; set; } = "Graphite";
