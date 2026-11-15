@@ -823,8 +823,55 @@ public partial class DockWindow : Window
         e.Handled = true;
     }
 
+    // ---------- drag a file over a running app: after a moment its window comes up, so you can drop the file into it
+    // (like Windows' taskbar). Held there longer, an app with several windows shows the next one.
+
+    readonly DispatcherTimer dragSwitch = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    DockApp? dragOverApp;
+
+    void App_DragEnter(object sender, DragEventArgs e)
+    {
+        if (((FrameworkElement)sender).Tag is not DockApp app || app.Windows.Count == 0) return;
+        if (dragOverApp == app && dragSwitch.IsEnabled) return; // (moving across the icon's own parts)
+        WindowPreview.HideNow();
+        dragOverApp = app;
+        dragSwitch.Tick -= DragSwitchTick;
+        dragSwitch.Tick += DragSwitchTick;
+        dragSwitch.Interval = TimeSpan.FromMilliseconds(500);
+        dragSwitch.Stop();
+        dragSwitch.Start();
+    }
+
+    void App_DragLeave(object sender, DragEventArgs e)
+    {
+        // Only when the pointer really left the icon (not just moved from its picture to its edge)
+        if (sender is FrameworkElement tile && tile.Tag == dragOverApp)
+        {
+            var at = e.GetPosition(tile);
+            if (at.X >= 0 && at.Y >= 0 && at.X < tile.ActualWidth && at.Y < tile.ActualHeight) return;
+            dragSwitch.Stop();
+            dragOverApp = null;
+        }
+    }
+
+    void DragSwitchTick(object? s, EventArgs e)
+    {
+        var app = dragOverApp;
+        if (app == null || app.Windows.Count == 0) { dragSwitch.Stop(); return; }
+        var fg = Native.GetForegroundWindow();
+        int idx = app.Windows.FindIndex(w => w.Hwnd == fg);
+        if (idx < 0 || app.Windows.Count > 1)
+        {
+            keepVisibleUntil = DateTime.Now.AddSeconds(1.5);
+            Native.ForceForeground(app.Windows[idx < 0 ? 0 : (idx + 1) % app.Windows.Count].Hwnd);
+        }
+        dragSwitch.Interval = TimeSpan.FromMilliseconds(1200); // still there: the next window after a bit longer
+    }
+
     void App_Drop(object sender, DragEventArgs e)
     {
+        dragSwitch.Stop();
+        dragOverApp = null;
         e.Handled = true;
         if (((FrameworkElement)sender).Tag is not DockApp app || e.Data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0) return;
         var exe = ExeFor(app, this);

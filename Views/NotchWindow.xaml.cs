@@ -1312,7 +1312,7 @@ public partial class NotchWindow : Window
                 Icon = icon,
                 Glyph = icon == null ? (url ? "" : "") : null,
                 Badge = i <= 9 ? i.ToString() : null,
-                Tip = s.Path + (i <= 9 ? $"   ·   Ctrl+Alt+{i}" : ""),
+                Tip = s.Path + (i <= 9 && HotkeyCatalog.ForShortcut(i) is { } k ? $"   ·   {k}" : ""),
             };
             shortcuts.Add(vm);
             // A website's own logo, fetched once and kept (the globe shows until it arrives)

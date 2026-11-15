@@ -29,6 +29,43 @@ public partial class App : Application
     GalleryWindow? gallery;
 
     /// <summary>Compact the heap and return unused pages shortly after a burst of UI work (closing a panel or window).</summary>
+    bool hotkeysPaused, gameHasKeys;
+
+    /// <summary>Take Brim's keyboard shortcuts as set up in Settings (each can be off, or on other keys).</summary>
+    public void ApplyHotkeys()
+    {
+        if (messages == null) return;
+        messages.UnregisterAll();
+        if (hotkeysPaused || gameHasKeys) return;
+        foreach (var e in HotkeyCatalog.All)
+        {
+            var h = HotkeyCatalog.For(e.Id);
+            if (!h.On) continue;
+            if (e.Id == "shortcuts")
+                for (int i = 1; i <= 9; i++) messages.Register(1 + i, h.Mods, (uint)('0' + i), $"{HotkeyCatalog.Describe(h.Mods, (uint)('0' + i))} (shortcut {i})");
+            else if (h.Vk != 0)
+                messages.Register(e.MessageId, h.Mods, h.Vk, $"{HotkeyCatalog.Describe(h.Mods, h.Vk)} ({e.Name.ToLowerInvariant()})");
+        }
+    }
+
+    /// <summary>While Settings records new keys: no shortcut fires (or swallows the keys being pressed).</summary>
+    public void PauseHotkeys(bool pause)
+    {
+        hotkeysPaused = pause;
+        ApplyHotkeys();
+    }
+
+    /// <summary>"Pause shortcuts while a game or video is fullscreen": the game gets keys like Ctrl+Space.</summary>
+    void HotkeysForFullscreen(System.Collections.Generic.HashSet<IntPtr> covered)
+    {
+        bool game = S.HotkeysOffInFullscreen && covered.Count > 0 &&
+                    covered.Contains(Native.MonitorFromWindow(Native.GetForegroundWindow(), 2));
+        if (game == gameHasKeys) return;
+        gameHasKeys = game;
+        Log.Note("hotkey", game ? "a game or video is fullscreen: Brim's shortcuts are paused" : "Brim's shortcuts are back");
+        ApplyHotkeys();
+    }
+
     public void ScheduleTrim()
     {
         busyAt = DateTime.Now;
@@ -962,15 +999,7 @@ public partial class App : Application
 
         messages = new MessageWindow();
         messages.Hotkey += OnHotkey;
-        const uint CtrlAlt = Native.MOD_CONTROL | Native.MOD_ALT;
-        messages.Register(1, CtrlAlt, 'N', "Ctrl+Alt+N (open the notch)");
-        for (int i = 1; i <= 9; i++) messages.Register(1 + i, CtrlAlt, (uint)('0' + i), $"Ctrl+Alt+{i} (shortcut {i})");
-        messages.Register(11, CtrlAlt, 'H', "Ctrl+Alt+H (desktop icons)");
-        messages.Register(12, CtrlAlt, 'P', "Ctrl+Alt+P (play/pause)");
-        messages.Register(13, CtrlAlt, 'C', "Ctrl+Alt+C (colour picker)");
-        messages.Register(14, CtrlAlt, 'M', "Ctrl+Alt+M (mute microphone)");
-        messages.Register(15, Native.MOD_CONTROL, 0x20 /* Space */, "Ctrl+Space (search)");
-        messages.Register(16, CtrlAlt, 'V', "Ctrl+Alt+V (paste as plain text)");
+        ApplyHotkeys();
         WidgetWindow.WentOnTop += () => { notch?.EnsureTopmost(); foreach (var d in AllDocks) d.EnsureTopmost(); };
         AutoLook.Changed += () => ApplyAll();
         AutoLook.Start();
@@ -1209,6 +1238,7 @@ public partial class App : Application
         if (key != lastFullscreenWhy) { lastFullscreenWhy = key; Log.Note("fullscreen", why); }
         foreach (var n in AllNotches) n.SetFullscreenHidden(S.HideInFullscreen && covered.Contains(n.Monitor));
         foreach (var d in AllDocks) d.SetFullscreen(covered.Contains(d.Monitor));
+        HotkeysForFullscreen(covered);
     }
 
     int winEvents, reacts;

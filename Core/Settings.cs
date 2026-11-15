@@ -231,6 +231,10 @@ public class AppSettings
     public bool DockTaskManager { get; set; }
     /// <summary>A settings button on the dock (Windows Settings or Brim's)</summary>
     public bool DockSettingsButton { get; set; } = true;
+    /// <summary>Brim's keyboard shortcuts as you changed them (anything not here has its usual keys)</summary>
+    public Dictionary<string, HotkeySetting> Hotkeys { get; set; } = new();
+    /// <summary>Leave keys to the game: no Brim shortcuts while a game or video is fullscreen</summary>
+    public bool HotkeysOffInFullscreen { get; set; }
     /// <summary>Show the keyboard language (ENG, ARA…) on the dock, when Windows has more than one</summary>
     public bool DockLanguage { get; set; } = true;
     /// <summary>With a maximised window above the dock: Bar (solid, edge to edge) or Floating (wallpaper shows beside it)</summary>

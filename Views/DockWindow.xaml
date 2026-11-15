@@ -37,7 +37,7 @@
                                 Width="{Binding TileSize}" Height="{Binding TileSize}"
                                 Click="App_Click" MouseRightButtonUp="App_RightClick" MouseUp="App_MiddleClick"
                                 PreviewMouseLeftButtonDown="App_PressDrag" PreviewMouseMove="App_DragMove" PreviewMouseLeftButtonUp="App_DragEnd"
-                                AllowDrop="True" DragOver="App_DragOver" Drop="App_Drop">
+                                AllowDrop="True" DragOver="App_DragOver" Drop="App_Drop" DragEnter="App_DragEnter" DragLeave="App_DragLeave">
                             <Grid>
                                 <Image Source="{Binding Icon}" Width="{Binding IconSize}" Height="{Binding IconSize}"
                                        RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center" VerticalAlignment="Center"/>

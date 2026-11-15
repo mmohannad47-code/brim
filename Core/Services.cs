@@ -41,13 +41,22 @@ public sealed class MessageWindow : IDisposable
     {
         if (Native.RegisterHotKey(src.Handle, id, mods | Native.MOD_NOREPEAT, vk)) return true;
         int err = Marshal.GetLastWin32Error();
-        Log.Note("hotkey", $"{name}: Windows said no ({(err == 1409 ? "another app already uses it" : "error " + err)}), so Brim listens for it itself");
+        if (refused.Add(name))
+            Log.Note("hotkey", $"{name}: Windows said no ({(err == 1409 ? "another app already uses it" : "error " + err)}), so Brim listens for it itself");
         listener ??= new KeyListener(id2 => src.Dispatcher.BeginInvoke(new Action(() => Hotkey?.Invoke(id2))));
         listener.Add(id, mods, vk);
         return false;
     }
 
     KeyListener? listener;
+    readonly HashSet<string> refused = new(); // (each refusal is logged once)
+
+    /// <summary>Let go of every shortcut (to set them up again, or while a game has the keys).</summary>
+    public void UnregisterAll()
+    {
+        for (int i = 1; i < 32; i++) Native.UnregisterHotKey(src.Handle, i);
+        listener?.Clear();
+    }
 
     IntPtr WndProc(IntPtr hwnd, int msg, IntPtr w, IntPtr l, ref bool handled)
     {
@@ -108,6 +117,8 @@ sealed class KeyListener : IDisposable
     }
 
     public void Add(int id, uint mods, uint vk) => combos = combos.Append(new Combo(id, mods, vk)).ToArray();
+
+    public void Clear() => combos = Array.Empty<Combo>();
 
     static bool Down(int vk) => GetAsyncKeyState(vk) < 0;
 
@@ -342,8 +353,8 @@ public static class ClipboardHistory
             var text = Clipboard.GetText();
             suppressNext = true;
             Clipboard.SetText(text);
-            // Wait for Ctrl+Alt to be let go, or the target app would see Ctrl+Alt+V again
-            for (int i = 0; i < 40 && ((GetAsyncKeyState(0x12) & 0x8000) != 0 || (GetAsyncKeyState(0x11) & 0x8000) != 0); i++)
+            // Wait for the shortcut keys to be let go, or the target app would see them along with Ctrl+V
+            for (int i = 0; i < 40 && new[] { 0x10, 0x11, 0x12, 0x5B, 0x5C }.Any(k => (GetAsyncKeyState(k) & 0x8000) != 0); i++)
                 await Task.Delay(25);
             Native.TapKeys(0x11 /* Ctrl */, (byte)'V');
         }

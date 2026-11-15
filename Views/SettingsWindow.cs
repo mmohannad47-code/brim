@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -177,17 +178,99 @@ public sealed class SettingsWindow : Window
             Info("Pin and search", "Right-click an item in the Clipboard tab to pin it to the top; type in the box above the list to search")
         );
 
-        Section("Keyboard");
-        Card(
-            Info("Ctrl + Space", "Search apps, games, settings and files"),
-            Info("Ctrl + Alt + N", "Open or close the notch"),
-            Info("Ctrl + Alt + V", "Paste as plain text (no fonts or colours)"),
-            Info("Ctrl + Alt + 1 … 9", "Launch shortcut 1 to 9"),
-            Info("Ctrl + Alt + P", "Play / pause"),
-            Info("Ctrl + Alt + H", "Show or hide desktop icons"),
-            Info("Ctrl + Alt + M", "Mute or unmute your microphone"),
-            Info("Ctrl + Alt + C", "Copy the colour under the pointer")
-        );
+        KeyboardSection();
+    }
+
+    // ---------- keyboard shortcuts: each one on or off, on the keys you choose
+
+    void KeyboardSection()
+    {
+        Section("Keyboard shortcuts");
+        var rows = new List<UIElement?>();
+        foreach (var e in HotkeyCatalog.All)
+        {
+            var entry = e;
+            var h = HotkeyCatalog.For(e.Id);
+            Button keys = null!;
+            keys = PillBtn(e.Id == "shortcuts" ? HotkeyCatalog.Describe(h.Mods, 0) + "1…9" : HotkeyCatalog.Describe(h.Mods, h.Vk), () => RecordKeys(entry, keys));
+            keys.ToolTip = "Click, then press the keys you want (Esc to cancel)";
+            keys.Opacity = h.On ? 1 : 0.45;
+            keys.Margin = new Thickness(0, 0, 12, 0);
+            var control = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            control.Children.Add(keys);
+            control.Children.Add(Switch(h.On, v =>
+            {
+                var now = HotkeyCatalog.For(entry.Id);
+                S.Hotkeys[entry.Id] = new HotkeySetting { On = v, Mods = now.Mods, Vk = now.Vk };
+                SettingsStore.Save();
+                AppRef.ApplyHotkeys();
+                Rebuild();
+            }));
+            string? clash = h.On && HotkeyCatalog.UsedBy(e.Id, h.Mods, e.Id == "shortcuts" ? '1' : h.Vk) is { } other ? $"Same keys as “{other}”: change one of them" : null;
+            rows.Add(Row(e.Name, clash, control));
+        }
+        rows.Add(Row("Pause them while a game or video is fullscreen", "Keys like Ctrl+Space go to the game (to crouch and jump); the shortcuts come back when you leave it",
+            Switch(S.HotkeysOffInFullscreen, v => { S.HotkeysOffInFullscreen = v; Commit(); })));
+        if (S.Hotkeys.Count > 0)
+            rows.Add(Row("Back to the usual keys", "Every shortcut on, on the keys Brim started with", PillBtn("Reset", () =>
+            {
+                S.Hotkeys.Clear();
+                SettingsStore.Save();
+                AppRef.ApplyHotkeys();
+                Rebuild();
+            })));
+        Card(rows.ToArray());
+    }
+
+    Button? recordingKeys;
+
+    /// <summary>Wait for the keys to press for this shortcut (Brim's shortcuts are paused meanwhile, so they don't fire).</summary>
+    void RecordKeys(HotkeyCatalog.Entry e, Button b)
+    {
+        if (recordingKeys != null) return;
+        recordingKeys = b;
+        AppRef.PauseHotkeys(true);
+        b.Opacity = 1;
+        b.Content = e.Id == "shortcuts" ? "Hold keys and press a number…" : "Press the new keys…";
+        KeyEventHandler? onKey = null;
+        EventHandler? onLeave = null;
+        void Finish(uint mods = 0, uint vk = 0, bool save = false)
+        {
+            PreviewKeyDown -= onKey;
+            Deactivated -= onLeave;
+            recordingKeys = null;
+            if (save)
+            {
+                S.Hotkeys[e.Id] = new HotkeySetting { On = true, Mods = mods, Vk = e.Id == "shortcuts" ? 0 : vk };
+                SettingsStore.Save();
+            }
+            AppRef.PauseHotkeys(false);
+            Rebuild();
+        }
+        onKey = (_, k) =>
+        {
+            k.Handled = true;
+            var key = k.Key == Key.System ? k.SystemKey : k.Key;
+            if (key == Key.Escape) { Finish(); return; }
+            if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin) return; // wait for the real key
+            var m = Keyboard.Modifiers;
+            uint mods = (m.HasFlag(ModifierKeys.Control) ? Native.MOD_CONTROL : 0) | (m.HasFlag(ModifierKeys.Alt) ? Native.MOD_ALT : 0) |
+                        (m.HasFlag(ModifierKeys.Shift) ? Native.MOD_SHIFT : 0) | (m.HasFlag(ModifierKeys.Windows) ? Native.MOD_WIN : 0);
+            uint vk = (uint)KeyInterop.VirtualKeyFromKey(key);
+            bool fKey = vk is >= 0x70 and <= 0x87;
+            // Shift alone with a letter would get in the way of typing, so Ctrl, Alt or Win is needed (F-keys can go alone)
+            bool held = (mods & (Native.MOD_CONTROL | Native.MOD_ALT | Native.MOD_WIN)) != 0;
+            if (e.Id == "shortcuts")
+            {
+                if (!held || vk < '1' || vk > '9') { b.Content = "Hold Ctrl, Alt or Win and press a number"; return; }
+            }
+            else if (!held && !fKey) { b.Content = "Hold Ctrl, Alt or Win as well"; return; }
+            if (HotkeyCatalog.UsedBy(e.Id, mods, vk) is { } other) { b.Content = $"Already used for “{other}”"; return; }
+            Finish(mods, vk, save: true);
+        };
+        onLeave = (_, _) => Finish();
+        PreviewKeyDown += onKey;
+        Deactivated += onLeave;
     }
 
     /// <summary>One row per item: a switch to show it, and arrows to move the shown ones up and down.</summary>
@@ -573,7 +656,8 @@ public sealed class SettingsWindow : Window
 
     void ShortcutsPage()
     {
-        H1("Shortcuts", "Apps, folders and websites tucked into the notch. Up to 12; the first 9 also get Ctrl+Alt+number.");
+        H1("Shortcuts", "Apps, folders and websites tucked into the notch. Up to 12" +
+            (HotkeyCatalog.Label("shortcuts") is { } keys ? $"; the first 9 also open with {keys.Replace("1…9", "number")}." : "."));
 
         Section("In the notch");
         var rows = new List<UIElement?>();
@@ -581,7 +665,7 @@ public sealed class SettingsWindow : Window
         {
             var item = S.Shortcuts[i];
             int index = i;
-            rows.Add(ListRow(item, i < 9 ? $"Ctrl+Alt+{i + 1}" : null,
+            rows.Add(ListRow(item, i < 9 ? HotkeyCatalog.ForShortcut(i + 1) : null,
                 index > 0 ? () => { S.Shortcuts.RemoveAt(index); S.Shortcuts.Insert(index - 1, item); Commit(); Rebuild(); } : null,
                 () => { S.Shortcuts.RemoveAt(index); Commit(); Rebuild(); }));
         }
@@ -1619,7 +1703,7 @@ public sealed class SettingsWindow : Window
 
         Section("Clean desktop");
         Card(
-            Row("Hide desktop icons", "Your files stay where they are. Ctrl+Alt+H toggles this.", Switch(S.HideDesktopIcons, v => { S.HideDesktopIcons = v; Commit(); })),
+            Row("Hide desktop icons", "Your files stay where they are." + (HotkeyCatalog.Label("icons") is { } iconKeys ? $" {iconKeys} toggles this." : ""), Switch(S.HideDesktopIcons, v => { S.HideDesktopIcons = v; Commit(); })),
             Row("Change wallpaper", null, PillBtn("Open wallpaper settings", () => Launcher.Open("ms-settings:personalization-background")))
         );
 

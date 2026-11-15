@@ -404,6 +404,15 @@ public static class Snapshot
         set.ScrollTo(900);
         await Task.Delay(300);
         Save(set, Path.Combine(folder, "settings-Look-2.png"));
+        // The keyboard shortcuts at the bottom of the Notch page (one switched off, one on other keys)
+        s.Hotkeys["search"] = new HotkeySetting { On = false, Mods = Native.MOD_CONTROL, Vk = 0x20 };
+        s.Hotkeys["mic"] = new HotkeySetting { On = true, Mods = Native.MOD_CONTROL | Native.MOD_SHIFT, Vk = 0x77 /* F8 */ };
+        set.Show("Notch");
+        await Task.Delay(300);
+        set.ScrollTo(100000);
+        await Task.Delay(300);
+        Save(set, Path.Combine(folder, "settings-keys.png"));
+        s.Hotkeys.Clear();
         set.Close();
 
         File.WriteAllText(Path.Combine(folder, "glass.txt"), Core.Backdrop.Available ? "Windows blurs: glass uses the blur layer" : "Windows won't blur: glass uses a plain tint");
