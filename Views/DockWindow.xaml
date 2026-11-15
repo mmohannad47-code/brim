@@ -6,7 +6,8 @@
         SizeToContent="WidthAndHeight" UseLayoutRounding="True"
         FontFamily="{StaticResource Brim.Font}" Foreground="{DynamicResource Brim.Text}">
     <Border x:Name="Bar" Background="{DynamicResource Brim.Surface}" BorderBrush="{DynamicResource Brim.Stroke}" BorderThickness="1"
-            CornerRadius="18" Padding="6" Margin="0,0,0,8">
+            CornerRadius="18" Padding="6" Margin="0,0,0,8"
+            MouseRightButtonUp="Bar_RightClick" AllowDrop="True" DragOver="Bar_DragOver" Drop="Bar_Drop">
         <StackPanel x:Name="BarContent" Orientation="Horizontal">
             <Button x:Name="StartBtn" Style="{StaticResource Tile}" Click="Start_Click" ToolTip="Start">
                 <Grid x:Name="StartGlyph" Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -39,6 +40,9 @@
                                 PreviewMouseLeftButtonDown="App_PressDrag" PreviewMouseMove="App_DragMove" PreviewMouseLeftButtonUp="App_DragEnd"
                                 AllowDrop="True" DragOver="App_DragOver" Drop="App_Drop" DragEnter="App_DragEnter" DragLeave="App_DragLeave">
                             <Grid>
+                                <!-- Asked for attention: an orange glow behind the icon, like Windows' taskbar -->
+                                <Border CornerRadius="9" Margin="1" Background="#40FF9F0A" BorderBrush="#99FF9F0A" BorderThickness="1"
+                                        Visibility="{Binding AttentionVisibility}"/>
                                 <Image Source="{Binding Icon}" Width="{Binding IconSize}" Height="{Binding IconSize}"
                                        RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 <TextBlock Text="&#xE737;" FontFamily="{StaticResource Brim.Icons}" FontSize="18" Visibility="{Binding GlyphVisibility}"
@@ -82,10 +86,13 @@
                     <TextBlock x:Name="WeatherTemp" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="6,0,0,0"/>
                 </StackPanel>
             </Button>
-            <Button x:Name="StatusBtn" Style="{StaticResource Tile}" Click="Status_Click" ToolTip="Wi-Fi, Bluetooth, sound and brightness">
+            <Button x:Name="StatusBtn" Style="{StaticResource Tile}" Click="Status_Click" ToolTip="Wi-Fi, Bluetooth, sound and brightness"
+                    PreviewMouseWheel="Status_Wheel" MouseUp="Status_MiddleClick">
                 <StackPanel Orientation="Horizontal" Margin="10,0" VerticalAlignment="Center">
                     <TextBlock x:Name="NetGlyph" Text="&#xE701;" FontFamily="{StaticResource Brim.Icons}" FontSize="14" VerticalAlignment="Center"/>
                     <TextBlock x:Name="VolGlyph" Text="&#xE767;" FontFamily="{StaticResource Brim.Icons}" FontSize="14" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                    <!-- The level for a moment while you scroll on it -->
+                    <TextBlock x:Name="VolText" FontSize="12" VerticalAlignment="Center" Margin="5,0,0,0" Visibility="Collapsed"/>
                     <TextBlock x:Name="BatteryText" FontSize="12" VerticalAlignment="Center" Margin="10,0,0,0" Visibility="Collapsed"/>
                 </StackPanel>
             </Button>

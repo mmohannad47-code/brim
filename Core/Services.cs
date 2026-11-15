@@ -136,7 +136,13 @@ sealed class KeyListener : IDisposable
                 foreach (var c in combos)
                 {
                     if (c.Vk != k.vk || c.Mods != mods) continue;
-                    if (held != k.vk) { held = k.vk; pressed(c.Id); }
+                    if (held != k.vk)
+                    {
+                        held = k.vk;
+                        pressed(c.Id);
+                        // Win was held: tap a key that means nothing, or letting go of Win would open Start
+                        if ((c.Mods & Native.MOD_WIN) != 0) { Native.keybd_event(0xE8, 0, 0, UIntPtr.Zero); Native.keybd_event(0xE8, 0, 2, UIntPtr.Zero); }
+                    }
                     return new IntPtr(1);
                 }
             }

@@ -192,7 +192,7 @@ public sealed class SettingsWindow : Window
             var entry = e;
             var h = HotkeyCatalog.For(e.Id);
             Button keys = null!;
-            keys = PillBtn(e.Id == "shortcuts" ? HotkeyCatalog.Describe(h.Mods, 0) + "1…9" : HotkeyCatalog.Describe(h.Mods, h.Vk), () => RecordKeys(entry, keys));
+            keys = PillBtn(HotkeyCatalog.Numbered(e.Id) ? HotkeyCatalog.Describe(h.Mods, 0) + "1…9" : HotkeyCatalog.Describe(h.Mods, h.Vk), () => RecordKeys(entry, keys));
             keys.ToolTip = "Click, then press the keys you want (Esc to cancel)";
             keys.Opacity = h.On ? 1 : 0.45;
             keys.Margin = new Thickness(0, 0, 12, 0);
@@ -206,7 +206,10 @@ public sealed class SettingsWindow : Window
                 AppRef.ApplyHotkeys();
                 Rebuild();
             }));
-            string? clash = h.On && HotkeyCatalog.UsedBy(e.Id, h.Mods, e.Id == "shortcuts" ? '1' : h.Vk) is { } other ? $"Same keys as “{other}”: change one of them" : null;
+            string? clash = h.On && HotkeyCatalog.UsedBy(e.Id, h.Mods, HotkeyCatalog.Numbered(e.Id) ? '1' : h.Vk) is { } other ? $"Same keys as “{other}”: change one of them" : null;
+            if (clash == null && e.Id == "dockapps")
+                clash = S.Taskbar == TaskbarMode.Dock ? "Like Windows' taskbar: the app if it's closed, its window if it's open, its next window on another press"
+                                                       : "While Brim's dock replaces Windows' taskbar";
             rows.Add(Row(e.Name, clash, control));
         }
         rows.Add(Row("Pause them while a game or video is fullscreen", "Keys like Ctrl+Space go to the game (to crouch and jump); the shortcuts come back when you leave it",
@@ -231,7 +234,7 @@ public sealed class SettingsWindow : Window
         recordingKeys = b;
         AppRef.PauseHotkeys(true);
         b.Opacity = 1;
-        b.Content = e.Id == "shortcuts" ? "Hold keys and press a number…" : "Press the new keys…";
+        b.Content = HotkeyCatalog.Numbered(e.Id) ? "Hold keys and press a number…" : "Press the new keys…";
         KeyEventHandler? onKey = null;
         EventHandler? onLeave = null;
         void Finish(uint mods = 0, uint vk = 0, bool save = false)
@@ -241,7 +244,7 @@ public sealed class SettingsWindow : Window
             recordingKeys = null;
             if (save)
             {
-                S.Hotkeys[e.Id] = new HotkeySetting { On = true, Mods = mods, Vk = e.Id == "shortcuts" ? 0 : vk };
+                S.Hotkeys[e.Id] = new HotkeySetting { On = true, Mods = mods, Vk = HotkeyCatalog.Numbered(e.Id) ? 0 : vk };
                 SettingsStore.Save();
             }
             AppRef.PauseHotkeys(false);
@@ -260,7 +263,7 @@ public sealed class SettingsWindow : Window
             bool fKey = vk is >= 0x70 and <= 0x87;
             // Shift alone with a letter would get in the way of typing, so Ctrl, Alt or Win is needed (F-keys can go alone)
             bool held = (mods & (Native.MOD_CONTROL | Native.MOD_ALT | Native.MOD_WIN)) != 0;
-            if (e.Id == "shortcuts")
+            if (HotkeyCatalog.Numbered(e.Id))
             {
                 if (!held || vk < '1' || vk > '9') { b.Content = "Hold Ctrl, Alt or Win and press a number"; return; }
             }

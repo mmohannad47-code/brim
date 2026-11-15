@@ -41,8 +41,11 @@ public partial class App : Application
         {
             var h = HotkeyCatalog.For(e.Id);
             if (!h.On) continue;
-            if (e.Id == "shortcuts")
-                for (int i = 1; i <= 9; i++) messages.Register(1 + i, h.Mods, (uint)('0' + i), $"{HotkeyCatalog.Describe(h.Mods, (uint)('0' + i))} (shortcut {i})");
+            // Win+1…9 belong to the taskbar: Brim's only while its dock stands in for Windows' taskbar
+            if (e.Id == "dockapps" && S.Taskbar != TaskbarMode.Dock) continue;
+            if (HotkeyCatalog.Numbered(e.Id))
+                for (int i = 1; i <= 9; i++)
+                    messages.Register(e.MessageId + i - 1, h.Mods, (uint)('0' + i), $"{HotkeyCatalog.Describe(h.Mods, (uint)('0' + i))} ({(e.Id == "dockapps" ? "dock app" : "shortcut")} {i})");
             else if (h.Vk != 0)
                 messages.Register(e.MessageId, h.Mods, h.Vk, $"{HotkeyCatalog.Describe(h.Mods, h.Vk)} ({e.Name.ToLowerInvariant()})");
         }
@@ -525,6 +528,15 @@ public partial class App : Application
                             }
                             sb.AppendLine($"pressed twice: Brim saw it {secondGot} times, the other app {firstGot} times");
                             sb.AppendLine(secondGot == 2 && firstGot == 0 ? "PASS" : "FAIL");
+                            // Win+9 (Windows keeps Win+number for its taskbar): Brim gets it, and Start must not open
+                            int winGot = 0;
+                            second.Hotkey += id => { if (id == 29) winGot++; };
+                            sb.AppendLine("Brim gets Win+9 from Windows: " + second.Register(29, Native.MOD_WIN, '9', "test Win+9"));
+                            Tap(0x5B, false); Tap((byte)'9', false); Tap((byte)'9', true); Tap(0x5B, true);
+                            await System.Threading.Tasks.Task.Delay(700);
+                            bool startOpened = await Native.CloseStartIfOpen();
+                            sb.AppendLine($"Win+9: Brim saw it {winGot} times, Start opened: {startOpened}");
+                            sb.AppendLine(winGot == 1 && !startOpened ? "PASS" : "FAIL");
                             var mics = Audio.MicMuted;
                             sb.AppendLine($"microphones: all muted {mics} (has a mic: {Audio.HasMic})");
                             Audio.MicMuted = mics; // (the same state again: nothing changes, the log says how many it reached)
@@ -1155,8 +1167,28 @@ public partial class App : Application
             OledCare.Apply();
             WeatherService.Refresh();
             MessageCenter.Sync();
+            // Win+1…9 come and go with the dock
+            if (S.Taskbar != keysForTaskbar) { keysForTaskbar = S.Taskbar; ApplyHotkeys(); }
+            SyncDockAttention();
         }
         catch (Exception ex) { Log.Error("apply", ex); }
+    }
+
+    TaskbarMode? keysForTaskbar;
+    AttentionWatcher? dockAttention;
+
+    /// <summary>Apps asking for attention (a finished download, an installer waiting, a call) flash orange on the dock.</summary>
+    void SyncDockAttention()
+    {
+        if (S.Taskbar == TaskbarMode.Dock && dockAttention == null)
+            dockAttention = new AttentionWatcher((hwnd, flash) =>
+            {
+                if (!flash || !DockWindow.WantsAttention(hwnd)) return;
+                Native.GetWindowThreadProcessId(hwnd, out uint pid);
+                Log.Note("dock", $"{System.IO.Path.GetFileName(Native.ProcessPath(pid) ?? "?")} asked for attention ('{Native.TitleOf(hwnd)}')");
+                foreach (var d in AllDocks) d.RefreshApps();
+            });
+        else if (S.Taskbar != TaskbarMode.Dock && dockAttention != null) { dockAttention.Dispose(); dockAttention = null; }
     }
 
     static uint PidOf(IntPtr h) { Native.GetWindowThreadProcessId(h, out uint pid); return pid; }
@@ -1476,6 +1508,10 @@ public partial class App : Application
                 break;
             case 16:
                 ClipboardHistory.PastePlain();
+                break;
+            case >= 21 and <= 29:
+                // Win+1…9: the dock's 1st–9th app, like Windows' taskbar
+                dock?.OpenApp(id - 20);
                 break;
         }
     }

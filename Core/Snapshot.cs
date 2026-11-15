@@ -271,6 +271,11 @@ public static class Snapshot
         await Task.Delay(1500);
         dock.Left = -4000;
         Save(dock, Path.Combine(folder, "dock.png"));
+        // An app asking for attention (orange), as when a download finishes
+        dock.DebugAttention(2);
+        await Task.Delay(300);
+        Save(dock, Path.Combine(folder, "dock-attention.png"));
+        dock.DebugAttention(-1);
         s.DockColor = "#1E2A44";
         dock.ApplySettings();
         dock.Left = -4000;

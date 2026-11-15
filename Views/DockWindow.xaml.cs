@@ -44,6 +44,15 @@ public sealed class DockApp : Observable
 
     public Visibility DotVisibility => running ? Visibility.Visible : Visibility.Collapsed;
 
+    bool attention;
+    /// <summary>It asked for attention (a finished download, an installer waiting, a call): an orange glow until you go to it.</summary>
+    public bool Attention
+    {
+        get => attention;
+        set { if (attention == value) return; Set(ref attention, value); OnChanged(nameof(AttentionVisibility)); OnDot(); }
+    }
+    public Visibility AttentionVisibility => attention ? Visibility.Visible : Visibility.Collapsed;
+
     string? badge;
     /// <summary>Something to see in this app: a count, "" for a plain dot, null for nothing</summary>
     public string? Badge
@@ -66,8 +75,9 @@ public sealed class DockApp : Observable
 
     public double BadgeWidth => string.IsNullOrEmpty(badge) ? 9 : badge.Length > 1 ? 20 : 15;
     public double BadgeHeight => string.IsNullOrEmpty(badge) ? 9 : 15;
-    public double DotWidth => active ? 14 : 5;
-    public Brush DotBrush => active ? (Brush)Application.Current.FindResource("Brim.Accent") : (Brush)Application.Current.FindResource("Brim.Dim");
+    public double DotWidth => active || attention ? 14 : 5;
+    static readonly Brush Orange = new SolidColorBrush(Color.FromRgb(0xFF, 0x9F, 0x0A));
+    public Brush DotBrush => attention ? Orange : active ? (Brush)Application.Current.FindResource("Brim.Accent") : (Brush)Application.Current.FindResource("Brim.Dim");
 
     void OnDot() { OnChanged(nameof(DotVisibility)); OnChanged(nameof(DotWidth)); OnChanged(nameof(DotBrush)); }
     void OnChanged(string name) => RaiseChanged(name);
@@ -160,6 +170,8 @@ public partial class DockWindow : Window
     void OnOledDim(bool dim) =>
         Bar.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(dim ? 0.35 : 1, TimeSpan.FromMilliseconds(dim ? 1500 : 250)));
     internal void DebugDocked() { docked = true; ApplyShape(); }
+    /// <summary>For `--snapshot`: show app n asking for attention (-1: none).</summary>
+    internal void DebugAttention(int n) { refresh.Stop(); for (int i = 0; i < apps.Count; i++) apps[i].Attention = i == n; if (n < 0) refresh.Start(); }
 
     /// <summary>
     /// Floating pill normally; a full-width bar when a maximised window sits above it (with "keep windows above the
@@ -707,12 +719,15 @@ public partial class DockWindow : Window
                          .OrderBy(t => S.DockOrder.IndexOf(t.a.Key) is int k && k >= 0 ? k : S.DockOrder.Count + t.i)
                          .Select(t => t.a).ToList();
 
+        // A window you've gone to has had its attention; closed ones are forgotten
+        lock (attention) { attention.Remove(fg); attention.RemoveWhere(h => !Native.IsWindow(h)); }
         foreach (var app in order)
         {
             app.TileSize = tile;
             app.IconSize = iconSize;
             app.Running = app.Windows.Count > 0;
             app.Active = app.Windows.Any(w => w.Hwnd == fg);
+            lock (attention) app.Attention = !app.Active && app.Windows.Any(w => attention.Contains(w.Hwnd));
             app.TileMargin = new Thickness(S.DockSpacing / 2.0, 0, S.DockSpacing / 2.0, 0);
             app.Downloading = S.DockBadges && Downloads.ActiveFor(app.Windows.FirstOrDefault()?.ExePath ?? PinTargetOrPath(app), app.Windows.Select(w => w.Pid));
             if (!S.DockBadges) app.Badge = null;
@@ -728,6 +743,16 @@ public partial class DockWindow : Window
             foreach (var a in order) apps.Add(a);
         }
         foreach (var k in known.Keys.Where(k => !order.Any(o => o.Key == k)).ToList()) known.Remove(k);
+    }
+
+    /// <summary>Windows that asked for attention (they flash orange until you go to them), shared by every screen's dock.</summary>
+    static readonly HashSet<IntPtr> attention = new();
+
+    /// <summary>A window flashed for attention: true when it's new (and not the window you're already in).</summary>
+    public static bool WantsAttention(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || hwnd == Native.GetForegroundWindow()) return false;
+        lock (attention) return attention.Add(hwnd);
     }
 
     /// <summary>The exe a pinned app starts (for its badge while it isn't running).</summary>
@@ -774,7 +799,7 @@ public partial class DockWindow : Window
 
     void App_DragMove(object sender, MouseEventArgs e)
     {
-        if (pressed == null || dragging || e.LeftButton != MouseButtonState.Pressed) return;
+        if (pressed == null || dragging || e.LeftButton != MouseButtonState.Pressed || S.DockLocked) return;
         if (Math.Abs(e.GetPosition(Apps).X - pressAt.X) < 8) return;
         // Past the threshold: lift the icon and carry it (the others slide aside as it passes them)
         if (Apps.ItemContainerGenerator.ContainerFromItem(pressed) is not FrameworkElement box || VisualTreeHelper.GetParent(box) is not Panel host) return;
@@ -885,6 +910,27 @@ public partial class DockWindow : Window
         if (((FrameworkElement)sender).Tag is not DockApp app) return;
         WindowPreview.HideNow();
         previewDelay.Stop();
+        // Like Windows' taskbar: Shift+click opens a new window, Ctrl+Shift+click opens it as administrator
+        // (read straight from the keyboard: the dock never has the keyboard, so WPF's idea of it can be stale)
+        if (Native.IsKeyDown(0x10 /* Shift */) && app.LaunchPath != null && !app.Key.StartsWith("hwnd:"))
+        {
+            if (Native.IsKeyDown(0x11 /* Ctrl */) && Launcher.CanRunAsAdmin(app.LaunchPath)) Launcher.RunAsAdmin(app.LaunchPath, app.LaunchArgs);
+            else Launcher.Open(app.LaunchPath, app.LaunchArgs);
+            return;
+        }
+        await Activate(app);
+    }
+
+    /// <summary>Win+1…9: the dock's 1st–9th app, the same as clicking it.</summary>
+    public void OpenApp(int n)
+    {
+        if (n < 1 || n > apps.Count) return;
+        _ = Activate(apps[n - 1]);
+    }
+
+    /// <summary>Not running: start it. Running: bring it up; already in front: minimise it, or its next window.</summary>
+    async System.Threading.Tasks.Task Activate(DockApp app)
+    {
         keepVisibleUntil = DateTime.Now.AddSeconds(1.5);
         // With Start open, close it first; then just bring the app up (don't minimise it)
         bool startWasOpen = await Native.CloseStartIfOpen();
@@ -1073,6 +1119,91 @@ public partial class DockWindow : Window
 
     // Windows' own Settings (Brim's are in the notch)
     void Settings_Click(object sender, RoutedEventArgs e) => Launcher.Open("ms-settings:");
+
+    // ---------- right-click the dock's empty space, like Windows' taskbar
+
+    void Bar_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.Handled) return; // an app or the language has its own menu
+        e.Handled = true;
+        var menu = new ContextMenu();
+        menu.Items.Add(Item("Task Manager", () => TaskMgr_Click(this, new RoutedEventArgs())));
+        menu.Items.Add(Item("Show desktop", () => Desktop_Click(this, new RoutedEventArgs())));
+        menu.Items.Add(new Separator());
+        var locked = new MenuItem { Header = "Lock the icons in place", IsCheckable = true, IsChecked = S.DockLocked, ToolTip = "No dragging them into a new order by accident" };
+        locked.Click += (_, _) => { S.DockLocked = !S.DockLocked; SettingsStore.Save(); };
+        menu.Items.Add(locked);
+        menu.Items.Add(Item("Dock settings…", () => ((App)Application.Current).OpenSettings("Taskbar")));
+        menu.Items.Add(Item("Windows Settings", () => Launcher.Open("ms-settings:")));
+        IsAnyMenuOpen = true;
+        HoverMenu.SetOwner(menu, Bar);
+        menu.Closed += (_, _) => IsAnyMenuOpen = false;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+        menu.IsOpen = true;
+    }
+
+    // ---------- drop a program or shortcut on the dock (not on an app) to pin it
+
+    static List<string> Pinnable(IDataObject data) =>
+        data.GetData(DataFormats.FileDrop) is string[] files
+            ? files.Where(f => (f.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)) && System.IO.File.Exists(f)).ToList()
+            : new();
+
+    void Bar_DragOver(object sender, DragEventArgs e)
+    {
+        if (e.Handled) return;
+        e.Effects = Pinnable(e.Data).Count > 0 ? DragDropEffects.Link : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    void Bar_Drop(object sender, DragEventArgs e)
+    {
+        if (e.Handled) return;
+        e.Handled = true;
+        int added = 0;
+        foreach (var f in Pinnable(e.Data))
+        {
+            var key = KeyFor(PinTarget(new ShortcutItem { Path = f }) ?? f);
+            if (S.DockPins.Any(p => KeyFor(PinTarget(p) ?? p.Path) == key)) continue; // already pinned
+            S.DockPins.Add(new ShortcutItem { Name = IconHelper.NiceName(f), Path = f });
+            added++;
+        }
+        if (added == 0) return;
+        SettingsStore.Save();
+        RefreshApps();
+        ((App)Application.Current).RefreshSettingsWindow();
+    }
+
+    // ---------- the sound icon, like Windows' taskbar: scroll for the volume, middle-click to mute
+
+    readonly DispatcherTimer volTextHide = new() { Interval = TimeSpan.FromMilliseconds(1400) };
+
+    void Status_Wheel(object sender, MouseWheelEventArgs e)
+    {
+        e.Handled = true;
+        // 2% a notch (a smooth-scrolling touchpad sends smaller steps, so it moves in smaller ones)
+        float step = 0.02f * Math.Clamp(e.Delta / 120f, -3f, 3f);
+        float v = Math.Clamp(Audio.Volume + step, 0f, 1f);
+        Audio.Volume = v;
+        if (step > 0 && Audio.Muted) Audio.Muted = false; // turning it up unmutes, as in Windows
+        VolGlyph.Text = Audio.Muted ? "" : "";
+        VolText.Text = $"{Math.Round(v * 100)}";
+        VolText.Visibility = Visibility.Visible;
+        volTextHide.Stop();
+        volTextHide.Tick -= HideVolText;
+        volTextHide.Tick += HideVolText;
+        volTextHide.Start();
+    }
+
+    void HideVolText(object? s, EventArgs e) { volTextHide.Stop(); VolText.Visibility = Visibility.Collapsed; }
+
+    void Status_MiddleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Middle) return;
+        e.Handled = true;
+        Audio.Muted = !Audio.Muted; // (the notch shows "Muted" / "Unmuted")
+        VolGlyph.Text = Audio.Muted ? "" : "";
+    }
 
     // ---------- keyboard language (ENG, ARA…), like Windows' taskbar
 

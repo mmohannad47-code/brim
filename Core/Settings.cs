@@ -231,6 +231,8 @@ public class AppSettings
     public bool DockTaskManager { get; set; }
     /// <summary>A settings button on the dock (Windows Settings or Brim's)</summary>
     public bool DockSettingsButton { get; set; } = true;
+    /// <summary>The dock's icons stay where they are (no dragging them into a new order)</summary>
+    public bool DockLocked { get; set; }
     /// <summary>Brim's keyboard shortcuts as you changed them (anything not here has its usual keys)</summary>
     public Dictionary<string, HotkeySetting> Hotkeys { get; set; } = new();
     /// <summary>Leave keys to the game: no Brim shortcuts while a game or video is fullscreen</summary>

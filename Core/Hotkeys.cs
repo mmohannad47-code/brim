@@ -32,7 +32,11 @@ public static class HotkeyCatalog
         new("colour", 13, "Copy the colour under the pointer", CtrlAlt, 'C'),
         new("plaintext", 16, "Paste as plain text", CtrlAlt, 'V'),
         new("icons", 11, "Hide / show desktop icons", CtrlAlt, 'H'),
+        new("dockapps", 21, "Open or switch to dock app 1–9", Native.MOD_WIN, 0),
     };
+
+    /// <summary>Keys that go with a number (1–9) rather than a key of their own.</summary>
+    public static bool Numbered(string id) => id is "shortcuts" or "dockapps";
 
     static AppSettings S => SettingsStore.Current;
 
@@ -48,7 +52,7 @@ public static class HotkeyCatalog
     {
         var h = For(id);
         if (!h.On) return null;
-        return id == "shortcuts" ? Describe(h.Mods, 0) + "1…9" : Describe(h.Mods, h.Vk);
+        return Numbered(id) ? Describe(h.Mods, 0) + "1…9" : Describe(h.Mods, h.Vk);
     }
 
     /// <summary>For shortcut tile n (1–9): "Ctrl+Alt+3", or null when those keys are off.</summary>
@@ -66,8 +70,8 @@ public static class HotkeyCatalog
             if (e.Id == id) continue;
             var h = For(e.Id);
             if (!h.On || h.Mods != mods) continue;
-            if (e.Id == "shortcuts" ? vk >= '1' && vk <= '9' : h.Vk == vk) return e.Name;
-            if (id == "shortcuts" && h.Vk >= '1' && h.Vk <= '9') return e.Name;
+            if (Numbered(e.Id) ? vk >= '1' && vk <= '9' : h.Vk == vk) return e.Name;
+            if (Numbered(id) && h.Vk >= '1' && h.Vk <= '9') return e.Name;
         }
         return null;
     }
