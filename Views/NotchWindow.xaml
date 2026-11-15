@@ -96,11 +96,11 @@
                                        Foreground="{DynamicResource Brim.Dim}" Margin="12,0,8,0" TextTrimming="CharacterEllipsis"/>
                             <StackPanel Grid.Column="2" Orientation="Horizontal">
                                 <Button Style="{StaticResource IconButton}" Content="&#xE722;" ToolTip="Screenshot (lands on your shelf)" Click="Screenshot_Click"/>
-                                <Button Style="{StaticResource IconButton}" Content="&#xE713;" ToolTip="Settings" Click="Settings_Click"/>
+                                <Button Style="{StaticResource IconButton}" Content="&#xE713;" ToolTip="Brim settings" Click="Settings_Click"/>
                             </StackPanel>
                             </Grid>
 
-                            <Grid Grid.Row="1" Margin="0,12,0,0">
+                            <Grid Grid.Row="1" Margin="0,12,0,0" x:Name="TabContent" Background="Transparent">
 
                                 <!-- HOME: now playing + glance -->
                                 <Grid x:Name="HomePanel">

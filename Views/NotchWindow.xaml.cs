@@ -196,6 +196,17 @@ public partial class NotchWindow : Window
             var t = tab;
             t.MouseRightButtonUp += (_, e) => { e.Handled = true; TabMenu(t); };
         }
+        // ...and anywhere in the tab's own area that doesn't have a menu of its own (a clip, a game, a shortcut keep theirs;
+        // text you type in keeps cut / copy / paste)
+        TabContent.MouseRightButtonUp += (_, e) =>
+        {
+            if (e.Handled) return;
+            for (var d = e.OriginalSource as DependencyObject; d != null && d != TabContent; d = d is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d))
+                if (d is System.Windows.Controls.Primitives.TextBoxBase) return;
+            if (AllTabs.FirstOrDefault(x => x.IsChecked == true && x.Parent != null) is not { } current) return;
+            e.Handled = true;
+            TabMenu(current);
+        };
         TabNotes.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
         {
             if (mode == Mode.Open && TabNotes.IsChecked == true && NotesPanel.Children.Count > 0 && NotesPanel.Children[0] is NotesView notes)
