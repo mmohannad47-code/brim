@@ -539,6 +539,18 @@ public sealed class SettingsWindow : Window
             if (S.AccentFromWallpaper) b.Opacity = sel ? 1 : 0.45;
             accents.Children.Add(b);
         }
+        // Any other colour: your own pick shows as a swatch, then the wheel opens to choose from every colour
+        bool custom = !ThemeManager.Accents.Any(a => string.Equals(S.Accent, a, StringComparison.OrdinalIgnoreCase));
+        if (custom)
+        {
+            var mine = new Button { Width = 30, Height = 30, Margin = new Thickness(0, 0, 8, 8), Cursor = System.Windows.Input.Cursors.Hand, ToolTip = S.Accent };
+            mine.Template = SwatchTemplate(ThemeManager.Parse(S.Accent), !S.AccentFromWallpaper);
+            mine.Click += (_, _) => { S.AccentFromWallpaper = false; Commit(); Rebuild(); };
+            accents.Children.Add(mine);
+        }
+        accents.Children.Add(WheelButton(30, () => ThemeManager.Parse(S.Accent),
+            c => { S.Accent = ColourWheel.Hex(c); S.AccentFromWallpaper = false; ThemeManager.Apply(); Commit(false); },
+            c => { S.Accent = ColourWheel.Hex(c); S.AccentFromWallpaper = false; Commit(); Rebuild(); }));
         Card(
             Row("Match my wallpaper", "Picks the accent from your wallpaper, including Wallpaper Engine scenes and videos, and follows it when it changes",
                 Switch(S.AccentFromWallpaper, v => { S.AccentFromWallpaper = v; Commit(); AutoLook.Check(force: true); Rebuild(); })),
@@ -1007,7 +1019,7 @@ public sealed class SettingsWindow : Window
                     v => Set(() => item.Look = v == "Default" ? null : v))));
             rows.Add(Row("Font", null,
                 Chips(WidgetStyles.Fonts.Select(f => f.name).ToArray(), item.Font, v => Set(() => item.Font = v))));
-            rows.Add(Row("Text colour", null, ColourPicker(item.TextColor, v => Set(() => item.TextColor = v))));
+            rows.Add(Row("Text colour", null, ColourPicker(item.TextColor, v => Set(() => item.TextColor = v), v => { item.TextColor = v; Commit(false); })));
             rows.Add(Row("Size", null,
                 Chips(WidgetStyles.Sizes.Select(s => s.name).ToArray(),
                     WidgetStyles.Sizes.OrderBy(s => Math.Abs(s.scale - item.Scale)).First().name,
@@ -1130,7 +1142,7 @@ public sealed class SettingsWindow : Window
             box.Children.Add(Mini("Weight", Chips(new[] { "Thin", "Light", "Regular", "SemiBold", "Bold" }, line.Weight, v => Set(() => line.Weight = v))));
             box.Children.Add(Mini("Letters", Chips(new[] { "None", "Wide", "Wider" }, line.Spacing, v => Set(() => line.Spacing = v))));
             box.Children.Add(Mini("Case", Chips(new[] { "As typed", "UPPER", "lower" }, line.Case, v => Set(() => line.Case = v))));
-            box.Children.Add(Mini("Colour", ColourPicker(line.Color, v => Set(() => line.Color = v))));
+            box.Children.Add(Mini("Colour", ColourPicker(line.Color, v => Set(() => line.Color = v), v => { line.Color = v; Live(); })));
 
             var opacity = new Slider { Minimum = 0.1, Maximum = 1, Value = line.Opacity, Width = 260 };
             opacity.SetResourceReference(StyleProperty, "BrimSlider");
@@ -1415,7 +1427,31 @@ public sealed class SettingsWindow : Window
         return g;
     }
 
-    FrameworkElement ColourPicker(string? current, Action<string?> set)
+    /// <summary>A rainbow swatch that opens the colour wheel: <paramref name="live"/> while dragging, <paramref name="done"/> when it closes.</summary>
+    static Button WheelButton(double size, Func<Color> start, Action<Color>? live, Action<Color> done)
+    {
+        var b = new Button { Width = size, Height = size, Margin = new Thickness(0, 0, 8, 8), Cursor = System.Windows.Input.Cursors.Hand, ToolTip = "Any colour…" };
+        var t = new ControlTemplate(typeof(Button));
+        var face = new FrameworkElementFactory(typeof(Border));
+        face.SetValue(Border.CornerRadiusProperty, new CornerRadius(size / 2));
+        face.SetValue(Border.BackgroundProperty, new ImageBrush(ColourWheel.Disc()));
+        var plus = new FrameworkElementFactory(typeof(TextBlock));
+        plus.SetValue(TextBlock.TextProperty, "+");
+        plus.SetValue(TextBlock.FontSizeProperty, size * 0.6);
+        plus.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+        plus.SetValue(TextBlock.ForegroundProperty, new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x1F)));
+        plus.SetValue(TextBlock.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        plus.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
+        plus.SetValue(TextBlock.MarginProperty, new Thickness(0, -size * 0.12, 0, 0));
+        
+        face.AppendChild(plus);
+        t.VisualTree = face;
+        b.Template = t;
+        b.Click += (_, _) => ColourWheel.Open(b, start(), live, done);
+        return b;
+    }
+
+    FrameworkElement ColourPicker(string? current, Action<string?> set, Action<string?>? live = null)
     {
         var wp = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
         var auto = PillBtn("Auto", () => set(null));
@@ -1430,6 +1466,16 @@ public sealed class SettingsWindow : Window
             b.Click += (_, _) => set(h);
             wp.Children.Add(b);
         }
+        if (current != null && !WidgetStyles.TextColors.Any(h => string.Equals(current, h, StringComparison.OrdinalIgnoreCase)))
+        {
+            var mine = new Button { Width = 26, Height = 26, Margin = new Thickness(0, 0, 6, 0), ToolTip = current };
+            mine.Template = SwatchTemplate(ThemeManager.Parse(current), true);
+            wp.Children.Add(mine);
+        }
+        var wheel = WheelButton(26, () => current != null ? ThemeManager.Parse(current) : ThemeManager.AccentColor,
+            live == null ? null : c => live(ColourWheel.Hex(c)), c => set(ColourWheel.Hex(c)));
+        wheel.Margin = new Thickness(0);
+        wp.Children.Add(wheel);
         return wp;
     }
 

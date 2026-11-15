@@ -318,7 +318,24 @@ public static class Snapshot
             await Task.Delay(300);
             Save(set, Path.Combine(folder, $"settings-{page}.png"));
         }
+        set.Show("Look");
+        await Task.Delay(300);
+        set.ScrollTo(900);
+        await Task.Delay(300);
+        Save(set, Path.Combine(folder, "settings-Look-2.png"));
         set.Close();
+
+        File.WriteAllText(Path.Combine(folder, "glass.txt"), Core.Backdrop.Available ? "Windows blurs: glass uses the blur layer" : "Windows won't blur: glass uses a plain tint");
+
+        // The colour wheel on its own (it normally lives in a pop-up)
+        var wheel = new Views.ColourWheel(Color.FromRgb(0xE3, 0x12, 0x2F));
+        var wheelHost = new Window { Left = -4000, Top = 0, SizeToContent = SizeToContent.WidthAndHeight, WindowStyle = WindowStyle.None, ShowInTaskbar = false,
+            Content = new System.Windows.Controls.Border { Padding = new Thickness(16), Child = wheel } };
+        wheelHost.SetResourceReference(Window.BackgroundProperty, "Set.Card");
+        wheelHost.Show();
+        await Task.Delay(300);
+        Save(wheelHost, Path.Combine(folder, "colour-wheel.png"));
+        wheelHost.Close();
     }
 
     static void Save(FrameworkElement el, string path, Color? backdrop = null)

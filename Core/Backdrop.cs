@@ -31,6 +31,59 @@ public sealed class Backdrop : IDisposable
     [DllImport("user32.dll")] static extern int SetWindowRgn(IntPtr h, IntPtr rgn, bool redraw);
     [DllImport("gdi32.dll")] static extern IntPtr GetStockObject(int i);
 
+    static Windows.UI.ViewManagement.UISettings? ui;
+    static bool? available;
+
+    /// <summary>
+    /// Whether Windows will really blur. With "Transparency effects" off (Settings › Personalisation › Colours),
+    /// energy/battery saver on, or a basic display driver, the blur layer is drawn as its plain black fill instead,
+    /// so glass looks fall back to a thicker see-through tint with no blur layer.
+    /// </summary>
+    public static bool Available
+    {
+        get
+        {
+            if (available is bool known) return known;
+            bool on = Environment.GetEnvironmentVariable("BRIM_NOBLUR") != "1"; // dev: see the fallback
+            if (!on) { available = false; return false; }
+            try { ui ??= new Windows.UI.ViewManagement.UISettings(); on = ui.AdvancedEffectsEnabled; }
+            catch
+            {
+                try
+                {
+                    using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+                    on = k?.GetValue("EnableTransparency") is not int v || v != 0;
+                }
+                catch { }
+            }
+            available = on;
+            return on;
+        }
+    }
+
+    /// <summary>Calls <paramref name="changed"/> (on the UI thread) when blur turns on or off, e.g. energy saver kicking in.</summary>
+    public static void Watch(Action changed)
+    {
+        bool was = Available;
+        Log.Note("glass", $"Windows blur {(was ? "on" : "off (transparency effects or energy saver): glass uses a plain tint")}");
+        var d = System.Windows.Application.Current.Dispatcher;
+        void Recheck() => d.BeginInvoke(new Action(() =>
+        {
+            available = null;
+            if (Available == was) return;
+            was = Available;
+            Log.Note("glass", $"Windows blur turned {(was ? "on" : "off")}");
+            changed();
+        }));
+        try { if (ui != null) ui.AdvancedEffectsEnabledChanged += (_, _) => Recheck(); } catch { }
+        // Also on Windows' "a setting changed" broadcast, in case the event above doesn't reach a desktop app
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged += (_, _) => Recheck();
+    }
+
+    /// <summary>The tint a glass look uses: see-through over the blur, or thick enough to read on its own without it.</summary>
+    public static System.Windows.Media.Color Tint(System.Windows.Media.Color c, byte alpha) =>
+        System.Windows.Media.Color.FromArgb(Available ? alpha : Math.Max(alpha, (byte)0xD0), c.R, c.G, c.B);
+
     public Backdrop()
     {
         var hInst = Native.GetModuleHandle(null);

@@ -44,7 +44,7 @@ The small pill at the top of the screen. **Point at it** (or press **Ctrl+Alt+N*
 | **Shortcuts** | Up to 12 apps, folders or websites. Drag an app onto the notch to add it; right-click to remove. The first 9 open with **Ctrl+Alt+1…9**. |
 | **Games** | Every game you have installed, with cover art: Steam, Epic, GOG, Riot, EA, Ubisoft, Battle.net, Xbox, and game folders on any drive. New installs appear by themselves. Right-click a game to launch with DirectX/Vulkan, pick a different exe, change the cover or uninstall it. |
 | **Messages** | Notifications from Discord, Teams, Outlook, WhatsApp and other chat and mail apps. Click one to open it; right-click to mute a person or app. Turn on **Settings › Messages › Only pop up in the notch** to stop Windows' own corner pop-up for those apps. |
-| **Notes** | A page to type anything. Saves as you type. |
+| **Notes** | A page to type anything. Click the tab and start typing; it saves as you type. |
 | **Shelf** | Drop files on the notch to park them, then drag them out later. |
 | **Clipboard** | The last 40 things you copied. Click to copy again. |
 | **Controls** | Wi-Fi, Bluetooth, mic, volume, output device and brightness. |
@@ -87,7 +87,7 @@ Live wallpapers pause by themselves while a game or maximised window covers the 
 
 ### Looks
 
-**Settings › Look**: themes (Black, Graphite, Vampire, Synthwave, Matrix, Gold, Ember, Glacier and more), accent colours, glass or solid surfaces, and matching colours from your album art.
+**Settings › Look**: themes (Black, Graphite, Vampire, Synthwave, Matrix, Gold, Ember, Glacier and more), accent colours (any colour you like from the colour wheel), glass or solid surfaces, and matching colours from your album art. When Windows can't blur (transparency effects off, or energy saver on), glass becomes a plain tint instead of turning black.
 
 ### Keyboard shortcuts
 

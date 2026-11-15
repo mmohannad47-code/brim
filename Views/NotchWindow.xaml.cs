@@ -173,6 +173,13 @@ public partial class NotchWindow : Window
         // Leaving the clipboard search (click elsewhere or Esc) gives the notch back its usual behaviour
         Deactivated += (_, _) => { if (typing) { StopTyping(); if (!Body.IsMouseOver) leaveTimer.Start(); } };
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && typing) { StopTyping(); Collapse(); e.Handled = true; } };
+        // Clicking the Notes tab puts the cursor in the page straight away. Only on a click: a notch that merely
+        // opens on hover with Notes already showing still leaves the keyboard with your game or app.
+        TabNotes.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (mode == Mode.Open && TabNotes.IsChecked == true && NotesPanel.Children.Count > 0 && NotesPanel.Children[0] is NotesView notes)
+                notes.Focus(EnableTyping);
+        }), System.Windows.Threading.DispatcherPriority.Input);
 
         // OLED care: tiny shifts over time, dim when you're away. A notch hanging from the top edge
         // only moves sideways or up, never leaving a gap above it.
@@ -237,7 +244,7 @@ public partial class NotchWindow : Window
         UpdateShelfState();
         ClipEmpty.Visibility = ClipboardHistory.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         lastClosed = default;
-        if (S.NotchSurface == "Solid") { backdrop?.Dispose(); backdrop = null; }
+        if (S.NotchSurface == "Solid" || !Backdrop.Available) { backdrop?.Dispose(); backdrop = null; }
         else if (backdrop == null)
         {
             backdrop = new Backdrop();
@@ -308,7 +315,7 @@ public partial class NotchWindow : Window
         else
         {
             var c = ThemeManager.Parse(ThemeManager.Current.Surface);
-            Body.Background = new SolidColorBrush(Color.FromArgb(0x70, c.R, c.G, c.B));
+            Body.Background = new SolidColorBrush(Backdrop.Tint(c, 0x70));
             FaceText.Effect = null;
         }
         SyncBackdrop();

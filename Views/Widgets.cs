@@ -78,7 +78,7 @@ public sealed class WidgetWindow : Window
     public WidgetWindow(WidgetItem item)
     {
         Item = item;
-        Signature = item.Signature + "|" + S.WidgetStyle + "|" + S.Theme;
+        Signature = item.Signature + "|" + S.WidgetStyle + "|" + S.Theme + "|" + Backdrop.Available;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -118,7 +118,7 @@ public sealed class WidgetWindow : Window
             CornerRadius = new CornerRadius(item.Radius),
             Padding = lonelyDay ? new Thickness(8) : new Thickness(20, 16, 20, 18),
             BorderThickness = new Thickness(lonelyDay ? 0 : look.StrokeWidth),
-            Background = new SolidColorBrush(ThemeManager.Parse(bg)),
+            Background = new SolidColorBrush(look.Blur && !lonelyDay ? Backdrop.Tint(ThemeManager.Parse(bg), ThemeManager.Parse(bg).A) : ThemeManager.Parse(bg)),
             BorderBrush = new SolidColorBrush(ThemeManager.Parse(look.Stroke)),
             Child = content,
             Margin = new Thickness(6),
@@ -133,7 +133,7 @@ public sealed class WidgetWindow : Window
             hwnd = new WindowInteropHelper(this).Handle;
             Native.MakeToolWindow(hwnd, false);
             HwndSource.FromHwnd(hwnd).AddHook(WndProc);
-            if (look.Blur && !lonelyDay) backdrop = new Backdrop();
+            if (look.Blur && !lonelyDay && Backdrop.Available) backdrop = new Backdrop();
         };
         Loaded += (_, _) => { PlaceInitially(); Tick(); if (Raised) ApplyRaised(); else SyncBackdrop(true); };
         LocationChanged += (_, _) => SyncBackdrop(false);
@@ -364,7 +364,7 @@ public sealed class WidgetHost
         foreach (var (id, win) in windows.ToList())
         {
             // Gone, or its look changed: rebuild it
-            if (!current.TryGetValue(id, out var item) || win.Signature != item.Signature + "|" + S.WidgetStyle + "|" + S.Theme)
+            if (!current.TryGetValue(id, out var item) || win.Signature != item.Signature + "|" + S.WidgetStyle + "|" + S.Theme + "|" + Backdrop.Available)
             {
                 win.Close();
                 windows.Remove(id);

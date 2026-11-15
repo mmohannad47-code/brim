@@ -886,6 +886,7 @@ public partial class App : Application
             Updater.Start();
             SayIfUpdated();
             WindowsBanners.Start(); // "only pop up in the notch"
+            Backdrop.Watch(ApplyAll); // glass falls back to a tint while Windows won't blur (transparency off, energy saver)
             // A Wallpaper Engine video Brim used to play itself: hand it to Wallpaper Engine (it plays its own better)
             if (S.LiveWallpaper != null && WallpaperEngine.Installed &&
                 WallpaperEngine.Items().FirstOrDefault(i => string.Equals(i.File, S.LiveWallpaper, StringComparison.OrdinalIgnoreCase)) is { } weVideo)
