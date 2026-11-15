@@ -487,6 +487,40 @@ public static class Launcher
         catch (Exception ex) { Log.Error("launch " + path, ex); }
     }
 
+    /// <summary>A shortcut from the notch: as administrator when you ticked "Always run as administrator".</summary>
+    public static void Open(ShortcutItem s)
+    {
+        if (s.Admin && CanRunAsAdmin(s.Path)) RunAsAdmin(s.Path, s.Args);
+        else Open(s.Path, s.Args);
+    }
+
+    /// <summary>Programs, scripts and shortcuts to them can start as administrator; websites, folders and Store apps can't.</summary>
+    public static bool CanRunAsAdmin(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.Contains("://") || path.StartsWith("shell:", StringComparison.OrdinalIgnoreCase)) return false;
+        var target = path.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) ? IconHelper.ResolveShortcut(path) ?? path : path;
+        if (!System.IO.File.Exists(target) || StoreApps.Find(target) != null) return false;
+        return System.IO.Path.GetExtension(target).ToLowerInvariant() is ".exe" or ".bat" or ".cmd" or ".msc";
+    }
+
+    /// <summary>Start it with administrator rights (Windows asks first). Saying no there is fine: nothing happens.</summary>
+    public static void RunAsAdmin(string path, string? args = null, string? workDir = null)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(path) { UseShellExecute = true, Verb = "runas" };
+            if (!string.IsNullOrWhiteSpace(args)) psi.Arguments = args;
+            if (!string.IsNullOrWhiteSpace(workDir)) psi.WorkingDirectory = workDir;
+            Process.Start(psi);
+            Log.Note("launch", $"{System.IO.Path.GetFileName(path)} as administrator");
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            Log.Note("launch", $"{System.IO.Path.GetFileName(path)}: you said no to running it as administrator");
+        }
+        catch (Exception ex) { Log.Error("launch as administrator " + path, ex); }
+    }
+
     static string? RunningAumid(string exe)
     {
         foreach (var p in Process.GetProcessesByName(System.IO.Path.GetFileNameWithoutExtension(exe)))

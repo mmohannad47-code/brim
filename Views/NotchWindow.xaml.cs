@@ -212,6 +212,12 @@ public partial class NotchWindow : Window
             if (mode == Mode.Open && TabNotes.IsChecked == true && NotesPanel.Children.Count > 0 && NotesPanel.Children[0] is NotesView notes)
                 notes.Focus(EnableTyping);
         }), System.Windows.Threading.DispatcherPriority.Input);
+        // Same for the calculator: a click on its tab and you can type the sum straight away
+        TabCalc.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (mode == Mode.Open && TabCalc.IsChecked == true && CalcPanel.Children.Count > 0 && CalcPanel.Children[0] is CalculatorView calc)
+                calc.Focus(EnableTyping);
+        }), System.Windows.Threading.DispatcherPriority.Input);
 
         // OLED care: tiny shifts over time, dim when you're away. A notch hanging from the top edge
         // only moves sideways or up, never leaving a gap above it.
@@ -235,6 +241,7 @@ public partial class NotchWindow : Window
             (TabCtrl, "Controls · Wi-Fi, Bluetooth and sound"),
             (TabTimer, "Focus timer"),
             (TabNotes, "Notes · type anything, it saves by itself"),
+            (TabCalc, "Calculator · type a sum or tap the keys"),
         })
         {
             tab.ToolTip = null;
@@ -452,16 +459,17 @@ public partial class NotchWindow : Window
         "Timer" => TabTimer,
         "Messages" => TabMsgs,
         "Notes" => TabNotes,
+        "Calc" => TabCalc,
         _ => TabHome,
     });
 
     RadioButton? TabFor(string id) => id switch
     {
         "Home" => TabHome, "Apps" => TabApps, "Games" => TabGames, "Messages" => TabMsgs, "Shelf" => TabShelf,
-        "Clip" => TabClip, "Ctrl" => TabCtrl, "Timer" => TabTimer, "Notes" => TabNotes, _ => null,
+        "Clip" => TabClip, "Ctrl" => TabCtrl, "Timer" => TabTimer, "Notes" => TabNotes, "Calc" => TabCalc, _ => null,
     };
 
-    IEnumerable<RadioButton> AllTabs => new[] { TabHome, TabApps, TabGames, TabMsgs, TabNotes, TabShelf, TabClip, TabCtrl, TabTimer };
+    IEnumerable<RadioButton> AllTabs => new[] { TabHome, TabApps, TabGames, TabMsgs, TabNotes, TabCalc, TabShelf, TabClip, TabCtrl, TabTimer };
 
     /// <summary>The first tab you kept (where the notch opens when Home is hidden).</summary>
     RadioButton FirstTab => S.NotchTabs.Select(TabFor).FirstOrDefault(t => t != null) ?? TabHome;
@@ -1214,10 +1222,13 @@ public partial class NotchWindow : Window
     void Tab_Checked(object sender, RoutedEventArgs e)
     {
         if (HomePanel == null || AppsPanel == null || ShelfPanel == null || ClipPanel == null || CtrlPanel == null || GamesPanel == null || TimerPanel == null
-            || MsgPanel == null || TabMsgs == null || NotesPanel == null || TabNotes == null) return;
+            || MsgPanel == null || TabMsgs == null || NotesPanel == null || TabNotes == null || CalcPanel == null || TabCalc == null) return;
         bool notes = TabNotes.IsChecked == true;
         NotesPanel.Visibility = notes ? Visibility.Visible : Visibility.Collapsed;
         if (notes && NotesPanel.Children.Count == 0) NotesPanel.Children.Add(new NotesView(EnableTyping));
+        bool calc = TabCalc.IsChecked == true;
+        CalcPanel.Visibility = calc ? Visibility.Visible : Visibility.Collapsed;
+        if (calc && CalcPanel.Children.Count == 0) CalcPanel.Children.Add(new CalculatorView(EnableTyping));
         bool msgs = TabMsgs.IsChecked == true;
         MsgPanel.Visibility = msgs ? Visibility.Visible : Visibility.Collapsed;
         if (msgs && MsgPanel.Children.Count == 0) MsgPanel.Children.Add(new MessagesView(ShowMenu, () => Collapse()));
@@ -1358,7 +1369,7 @@ public partial class NotchWindow : Window
             if (!Body.IsMouseOver) leaveTimer.Start();
             return;
         }
-        Launcher.Open(vm.Item!.Path, vm.Item.Args);
+        Launcher.Open(vm.Item!);
         Collapse();
     }
 
@@ -1425,6 +1436,14 @@ public partial class NotchWindow : Window
         if (((FrameworkElement)sender).Tag is not ShortcutVM { Item: { } item }) return;
         e.Handled = true;
         var menu = new ContextMenu();
+        if (Launcher.CanRunAsAdmin(item.Path))
+        {
+            menu.Items.Add(MakeItem("Run as administrator", () => { Collapse(); Launcher.RunAsAdmin(item.Path, item.Args); }));
+            var always = new MenuItem { Header = "Always run as administrator", IsCheckable = true, IsChecked = item.Admin };
+            always.Click += (_, _) => { item.Admin = !item.Admin; SettingsStore.Save(); };
+            menu.Items.Add(always);
+            menu.Items.Add(new Separator());
+        }
         if (!IconHelper.IsUrl(item.Path))
             menu.Items.Add(MakeItem("Open file location", () => Launcher.ShowInFolder(item.Path)));
         int index = S.Shortcuts.IndexOf(item);
@@ -1515,6 +1534,15 @@ public partial class NotchWindow : Window
             {
                 Add("Copy all", () => { notes.CopyAll(); Note("Notes copied ✓"); });
                 Add("Clear the page", () => { notes.Clear(); Note("Notes cleared (the old page is in notes.txt.bak)"); });
+            }
+        }
+        else if (tab == TabCalc)
+        {
+            if (CalcPanel.Children.Count == 0) CalcPanel.Children.Add(new CalculatorView(EnableTyping));
+            if (CalcPanel.Children[0] is CalculatorView calc)
+            {
+                if (calc.HasResult) Add("Copy the answer", calc.CopyResult);
+                if (calc.HasHistory) Add("Clear the history", () => { calc.ClearHistory(); Note("Calculator history cleared"); });
             }
         }
         else if (tab == TabGames) Add("Look for new games now", () => { _ = GameLibrary.Refresh(); Note("Looking for new games…"); });

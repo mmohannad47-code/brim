@@ -943,9 +943,28 @@ public static class GameLibrary
 
     // ------------------------------------------------------------------ launching
 
-    public static void Launch(GameInfo g)
+    /// <summary>
+    /// The program to start as administrator. Steam, Epic and the other launchers start games without passing
+    /// administrator rights on, so it's the game's own exe (null when Brim doesn't know it, or it's a Store game).
+    /// </summary>
+    public static string? AdminExe(GameInfo g) =>
+        new[] { g.Exe }.Concat(g.Candidates).FirstOrDefault(x => x != null && File.Exists(x) && StoreApps.Find(x) == null);
+
+    public static void LaunchAsAdmin(GameInfo g)
+    {
+        if (AdminExe(g) is not { } exe) { Launch(g, admin: false); return; }
+        var o = S.GameOverrides.FirstOrDefault(x => x.Key == g.Key);
+        var args = string.Join(" ", new[] { g.Args, o?.RendererArgs }.Where(a => !string.IsNullOrWhiteSpace(a)));
+        Launcher.RunAsAdmin(exe, args, g.WorkDir ?? Path.GetDirectoryName(exe));
+        MarkPlayed(g);
+    }
+
+    public static void Launch(GameInfo g) => Launch(g, admin: true);
+
+    static void Launch(GameInfo g, bool admin)
     {
         var o = S.GameOverrides.FirstOrDefault(x => x.Key == g.Key);
+        if (admin && o?.Admin == true && AdminExe(g) != null) { LaunchAsAdmin(g); return; }
         if (!string.IsNullOrWhiteSpace(o?.RendererArgs))
         {
             LaunchWith(g, new LaunchOption("arg:" + o!.RendererArgs, "", null, o.RendererArgs, g.SteamAppId != null));
@@ -991,6 +1010,12 @@ public static class GameLibrary
     /// <summary>Start the game with one particular exe, just this once (from "Ask every time").</summary>
     public static void LaunchExe(GameInfo g, string exe)
     {
+        if (S.GameOverrides.FirstOrDefault(x => x.Key == g.Key)?.Admin == true && StoreApps.Find(exe) == null)
+        {
+            Launcher.RunAsAdmin(exe, g.Args, Path.GetDirectoryName(exe));
+            MarkPlayed(g);
+            return;
+        }
         try
         {
             var psi = new ProcessStartInfo(exe) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(exe) ?? "" };

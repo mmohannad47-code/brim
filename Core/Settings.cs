@@ -36,6 +36,8 @@ public class GameOverride
     public bool AskEachTime { get; set; }
     /// <summary>A renderer switch to start with, e.g. "-dx11" or "-force-vulkan" (games with several renderers in one exe)</summary>
     public string? RendererArgs { get; set; }
+    /// <summary>Always start it as administrator (its own exe, since Steam and other launchers don't pass that on)</summary>
+    public bool Admin { get; set; }
 }
 
 /// <summary>Which notifications of one app show in the notch's Messages tab.</summary>
@@ -69,6 +71,8 @@ public class ShortcutItem
     public string Name { get; set; } = "";
     public string Path { get; set; } = "";
     public string? Args { get; set; }
+    /// <summary>Always start it as administrator</summary>
+    public bool Admin { get; set; }
 }
 
 public class WidgetItem
@@ -286,10 +290,10 @@ public static class NotchCatalog
     {
         ("Home", "Home", ""), ("Apps", "Shortcuts", ""), ("Games", "Games", ""), ("Messages", "Messages", ""),
         ("Shelf", "Shelf", ""), ("Clip", "Clipboard", ""), ("Ctrl", "Controls", ""),
-        ("Timer", "Focus timer", ""), ("Notes", "Notes", "\uE70B"),
+        ("Timer", "Focus timer", ""), ("Notes", "Notes", "\uE70B"), ("Calc", "Calculator", "\uE8EF"),
     };
 
-    public static readonly string[] DefaultTabs = { "Home", "Apps", "Games", "Messages", "Notes", "Shelf", "Clip", "Ctrl", "Timer" };
+    public static readonly string[] DefaultTabs = { "Home", "Apps", "Games", "Messages", "Notes", "Calc", "Shelf", "Clip", "Ctrl", "Timer" };
     /// <summary>The tabs Brim had before tabs could be added by updates</summary>
     public static readonly string[] OriginalTabs = { "Home", "Apps", "Games", "Messages", "Shelf", "Clip", "Ctrl", "Timer" };
 

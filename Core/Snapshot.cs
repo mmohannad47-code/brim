@@ -170,7 +170,7 @@ public static class Snapshot
         Shelf.Items[0].Selected = true; Shelf.Items[2].Selected = true;
         GameLibrary.SetOrder(new() { "riot:league_of_legends.live", "folder:d:\\games\\bloodborne" });
         await MessageCenter.Refresh();
-        foreach (var tab in new[] { "Home", "Apps", "Games", "Messages", "Notes", "Shelf", "Clip", "Ctrl", "Timer" })
+        foreach (var tab in new[] { "Home", "Apps", "Games", "Messages", "Notes", "Calc", "Shelf", "Clip", "Ctrl", "Timer" })
         {
             notch.DebugOpen(tab);
             await Task.Delay(900);

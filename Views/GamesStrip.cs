@@ -318,6 +318,18 @@ public sealed class GamesStrip : Grid
     {
         var menu = new ContextMenu();
         menu.Items.Add(Item("Play", () => { GameLibrary.Launch(g); launched(); }));
+        if (GameLibrary.AdminExe(g) is { } adminExe)
+        {
+            // Through a launcher (Steam, Epic…) the game wouldn't get administrator rights, so this starts its own exe
+            string? how = g.LaunchUri != null ? $"Starts {Path.GetFileName(adminExe)} directly, not through {g.Source}" : null;
+            var now = Item("Run as administrator", () => { GameLibrary.LaunchAsAdmin(g); launched(); });
+            now.ToolTip = how;
+            menu.Items.Add(now);
+            var always = new MenuItem { Header = "Always run as administrator", IsCheckable = true, ToolTip = how,
+                                        IsChecked = SettingsStore.Current.GameOverrides.FirstOrDefault(o => o.Key == g.Key)?.Admin == true };
+            always.Click += (_, _) => { var o = GameLibrary.Override(g.Key); o.Admin = !o.Admin; SettingsStore.Save(); };
+            menu.Items.Add(always);
+        }
         menu.Items.Add(Item("Move to the front", () =>
         {
             var order = GameLibrary.Current.Select(x => x.Key).Where(k => k != g.Key).Prepend(g.Key).ToList();

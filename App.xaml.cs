@@ -49,16 +49,18 @@ public partial class App : Application
     void IdleTrim()
     {
         idleTicks++;
+        // Measured before trimming (straight after, Windows has just moved everything aside and it reads ~0)
+        if (idleTicks % 30 == 10) Log.Note("memory", MemoryCare.Describe()); // 10 minutes in, then every half hour
         bool quiet = settings == null && gallery == null && notch?.IsOpen != true && DateTime.Now - busyAt > TimeSpan.FromMinutes(3);
         if (quiet && !picturesReleased)
         {
             picturesReleased = true;
+            var before = MemoryCare.Now();
             int n = MemoryCare.Release();
             Native.TrimMemory(collect: true);
-            if (n >= 10) Log.Note("memory", $"quiet: let go of {n} cached pictures · {MemoryCare.Describe()}");
+            if (n >= 10) Log.Note("memory", $"quiet: let go of {n} cached pictures · committed {before.committed:0.0} → {MemoryCare.Now().committed:0.0} MB");
         }
         else Native.TrimMemory(collect: false);
-        if (idleTicks % 30 == 10) Log.Note("memory", MemoryCare.Describe()); // 10 minutes in, then every half hour
     }
 
     DateTime snipUntil;
@@ -399,7 +401,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -410,6 +412,40 @@ public partial class App : Application
                 {
                     switch (e.Args[0])
                     {
+                        case "--admin-test":
+                        {
+                            // Which shortcuts and games offer "Run as administrator" (nothing is started)
+                            SettingsStore.Load();
+                            foreach (var s in S.Shortcuts)
+                                sb.AppendLine($"shortcut {s.Name}: {(Launcher.CanRunAsAdmin(s.Path) ? "offered" : "not offered")} ({s.Path})");
+                            await GameLibrary.Refresh();
+                            foreach (var g in GameLibrary.Current)
+                                sb.AppendLine($"game {g.Name} [{g.Source}]: {(GameLibrary.AdminExe(g) is { } x ? "offered, starts " + x : "not offered (no exe known)")}");
+                            break;
+                        }
+                        case "--calc-test":
+                        {
+                            // The calculator tab's maths (with "." as the decimal point, whatever this PC uses)
+                            var culture = System.Globalization.CultureInfo.CurrentCulture;
+                            System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("en-GB");
+                            int fails = 0;
+                            foreach (var (sum, want) in new (string, string?)[]
+                            {
+                                ("0.1+0.2", "0.3"), ("12×4", "48"), ("12×4+10%", "52.8"), ("200+10%", "220"), ("200−10%", "180"),
+                                ("50%", "0.5"), ("50%×80", "40"), ("2^3^2", "512"), ("√9+1", "4"), ("2(3+4)", "14"), ("(1+2", "3"),
+                                ("10÷4", "2.5"), ("-5×-2", "10"), ("1,000+1", "1001"), ("1/3*3", "1"), ("2 x 3", "6"), ("7−10", "-3"),
+                                ("1÷0", null), ("3+", null), ("", null), ("√-4", null), ("abc", null), ("2..3", null),
+                            })
+                            {
+                                var got = Calc.Evaluate(sum) is decimal v ? Calc.Format(v) : null;
+                                bool ok = got == want;
+                                if (!ok) fails++;
+                                sb.AppendLine($"{(ok ? "ok  " : "FAIL")} {sum} = {got ?? "(nothing)"}{(ok ? "" : $"  (want {want ?? "nothing"})")}");
+                            }
+                            System.Globalization.CultureInfo.CurrentCulture = culture;
+                            sb.Insert(0, fails == 0 ? "ALL PASSED\n" : $"{fails} FAILED\n");
+                            break;
+                        }
                         case "--memory-test":
                         {
                             // What the picture caches cost once everything has been opened, and what letting go gets back
@@ -1376,7 +1412,7 @@ public partial class App : Application
                 break;
             case >= 2 and <= 10:
                 int index = id - 2;
-                if (index < S.Shortcuts.Count) Launcher.Open(S.Shortcuts[index].Path, S.Shortcuts[index].Args);
+                if (index < S.Shortcuts.Count) Launcher.Open(S.Shortcuts[index]);
                 break;
             case 11:
                 S.HideDesktopIcons = !S.HideDesktopIcons;

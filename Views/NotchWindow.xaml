@@ -90,6 +90,7 @@
 
                                 <RadioButton x:Name="TabTimer" GroupName="NotchTabs" Style="{StaticResource TabButton}" Content="&#xE916;" ToolTip="Focus timer" Checked="Tab_Checked"/>
                                 <RadioButton x:Name="TabNotes" GroupName="NotchTabs" Style="{StaticResource TabButton}" Content="&#xE70B;" ToolTip="Notes" Checked="Tab_Checked"/>
+                                <RadioButton x:Name="TabCalc" GroupName="NotchTabs" Style="{StaticResource TabButton}" Content="&#xE8EF;" ToolTip="Calculator" Checked="Tab_Checked"/>
                             </StackPanel>
                             <!-- The tab's name sits between the tabs and the buttons and shortens with … rather than overlapping either -->
                             <TextBlock x:Name="HeaderInfo" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="12"
@@ -317,6 +318,9 @@
 
                                 <!-- NOTES (built on demand) -->
                                 <Grid x:Name="NotesPanel" Visibility="Collapsed"/>
+
+                                <!-- CALCULATOR (built on demand) -->
+                                <Grid x:Name="CalcPanel" Visibility="Collapsed"/>
 
                                 <!-- GAMES (built on demand) -->
                                 <Grid x:Name="GamesPanel" Visibility="Collapsed"/>
