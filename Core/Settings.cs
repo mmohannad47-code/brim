@@ -225,6 +225,8 @@ public class AppSettings
     public bool DockBadges { get; set; } = true;
     /// <summary>A Task Manager button on the dock</summary>
     public bool DockTaskManager { get; set; }
+    /// <summary>A settings button on the dock (Windows Settings or Brim's)</summary>
+    public bool DockSettingsButton { get; set; } = true;
     /// <summary>With a maximised window above the dock: Bar (solid, edge to edge) or Floating (wallpaper shows beside it)</summary>
     public string DockWhenMaximized { get; set; } = "Bar";
     public List<ShortcutItem> DockPins { get; set; } = new();

@@ -51,7 +51,8 @@ sealed class LiveReorder
         this.liftScale = liftScale;
         panel.PreviewMouseMove += (_, e) => { if (Active) { Drag(e.GetPosition(panel)); e.Handled = true; } };
         panel.PreviewMouseLeftButtonUp += (_, e) => { if (Active) { e.Handled = true; End(); } };
-        panel.LostMouseCapture += (_, _) => { if (Active) End(); };
+        // Only when the row itself loses the mouse: a button inside letting go of it (as the drag starts) bubbles up here too
+        panel.LostMouseCapture += (_, e) => { if (Active && e.OriginalSource == panel) End(); };
     }
 
     List<FrameworkElement> Items => panel.Children.OfType<FrameworkElement>().Where(c => c.Visibility == Visibility.Visible && include(c)).ToList();

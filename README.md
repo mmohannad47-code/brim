@@ -50,7 +50,7 @@ The small pill at the top of the screen. **Point at it** (or press **Ctrl+Alt+N*
 | **Controls** | Wi-Fi, Bluetooth, mic, volume, output device and brightness. |
 | **Timer** | A focus timer; the notch counts down and pops out when time's up. |
 
-Choose which tabs to show, and their order, in **Settings › Notch**, or just drag a tab left or right in the notch. Right-click the Notes tab to copy or clear the page. The notch can sit at the left, centre or right, look like a notch or a floating island, and hides itself in fullscreen games and videos (only on the screen the game covers). While music plays, the closed notch shows the line being sung (turn off in **Settings › Notch › Lyrics**). Turn on **Settings › Notch › Hide while an app covers it** to tuck it away while an app is maximised or a window sits under it (smaller windows elsewhere leave it showing). With more than one monitor, **Settings › Notch › Screen › Every screen** puts a notch on each of them.
+Choose which tabs to show, and their order, in **Settings › Notch**, or just drag a tab left or right in the notch. Right-click any tab to move or hide it, plus its own quick actions (clear the clipboard or shelf, snooze message pop-ups, copy or clear notes, look for new games). The notch can sit at the left, centre or right, look like a notch or a floating island, and hides itself in fullscreen games and videos (only on the screen the game covers). While music plays, the closed notch shows the line being sung (turn off in **Settings › Notch › Lyrics**). Turn on **Settings › Notch › Hide while an app covers it** to tuck it away while an app is maximised or a window sits under it (smaller windows elsewhere leave it showing). With more than one monitor, **Settings › Notch › Screen › Every screen** puts a notch on each of them.
 
 It also pops out briefly for song changes, new messages, muting or unmuting your sound or mic, charging and headphones connecting.
 
@@ -62,7 +62,7 @@ It also pops out briefly for song changes, new messages, muting or unmuting your
 - Point at an app to see live previews of its windows, each shaped like its window (tall ones like a friends list too).
 - **Red badge:** the app has notifications or unread messages. **Blue arrow badge:** it's downloading something.
 - **⌃** opens the tray icons. The status icons open quick settings. The far-right strip is *show desktop*.
-- It's on every screen, like Windows' taskbar (or pick one screen in **Settings › Taskbar › Screen**). An optional Task Manager button can sit next to the tray.
+- It's on every screen, like Windows' taskbar (or pick one screen in **Settings › Taskbar › Screen**). An optional Task Manager button can sit next to the tray, and a settings button there opens Windows Settings or Brim's settings (turn it off in **Settings › Taskbar**).
 - Size, spacing, position, auto-hide and whether windows stay above the dock are all in **Settings › Taskbar**.
 
 Prefer Windows' own taskbar? The same page can just tidy it (centre or left icons, hide Search/Task View/Widgets) or auto-hide it.

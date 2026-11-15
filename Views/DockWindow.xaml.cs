@@ -255,6 +255,7 @@ public partial class DockWindow : Window
     {
         if (docked && S.DockWhenMaximized != "Bar") docked = false;
         TaskMgrBtn.Visibility = S.DockTaskManager ? Visibility.Visible : Visibility.Collapsed;
+        SettingsBtn.Visibility = S.DockSettingsButton ? Visibility.Visible : Visibility.Collapsed;
         ApplyShape(); // size, gap, roundness and position may have changed
         ApplySurface();
         var (tile, _) = Sizes;
@@ -1001,6 +1002,20 @@ public partial class DockWindow : Window
     void Start_Click(object sender, RoutedEventArgs e) => Native.TapKeys(Native.VK_LWIN);
     void Clock_Click(object sender, RoutedEventArgs e) => Native.TapKeys(Native.VK_LWIN, (byte)'N');
     void Tray_Click(object sender, RoutedEventArgs e) => Flyout.Toggle("tray", TrayBtn, () => new TrayPanel());
+
+    // Settings: Windows' own or Brim's
+    void Settings_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        menu.Items.Add(Item("Windows Settings", () => Launcher.Open("ms-settings:")));
+        menu.Items.Add(Item("Brim settings", () => ((App)Application.Current).OpenSettings()));
+        IsAnyMenuOpen = true;
+        HoverMenu.SetOwner(menu, SettingsBtn);
+        menu.Closed += (_, _) => IsAnyMenuOpen = false;
+        menu.PlacementTarget = SettingsBtn;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
+        menu.IsOpen = true;
+    }
 
     // Task Manager (Windows' own; on every Windows 10/11 PC)
     void TaskMgr_Click(object sender, RoutedEventArgs e) =>

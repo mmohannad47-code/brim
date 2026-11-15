@@ -190,30 +190,12 @@ public partial class NotchWindow : Window
                 tabReorder.Begin(t, e.GetPosition(TabsRow));
             };
         }
-        TabMsgs.MouseRightButtonUp += (_, e) => { e.Handled = true; MessagesTabMenu(); };
-        TabNotes.MouseRightButtonUp += (_, e) => { e.Handled = true; NotesTabMenu(); };
-        TabGames.MouseRightButtonUp += (_, e) =>
+        // Every tab has a right-click menu: its own quick actions (when there's something to act on), then moving or hiding the tab
+        foreach (var tab in AllTabs)
         {
-            e.Handled = true;
-            var menu = new ContextMenu();
-            menu.Items.Add(MakeItem("Look for new games now", () => { _ = GameLibrary.Refresh(); Note("Looking for new games…"); }));
-            ShowMenu(menu, TabGames);
-        };
-        // Right-click the Clipboard tab: clear the history in one go
-        TabClip.MouseRightButtonUp += (_, e) =>
-        {
-            e.Handled = true;
-            var menu = new ContextMenu();
-            int pinned = ClipboardHistory.Items.Count(i => i.Pinned), all = ClipboardHistory.Items.Count;
-            if (all == 0) menu.Items.Add(new MenuItem { Header = "The clipboard history is empty", IsEnabled = false });
-            else if (pinned == 0) menu.Items.Add(MakeItem("Clear all", () => ClipboardHistory.Clear(pinnedToo: true)));
-            else
-            {
-                if (all > pinned) menu.Items.Add(MakeItem($"Clear all but the {pinned} pinned", () => ClipboardHistory.Clear(pinnedToo: false)));
-                menu.Items.Add(MakeItem("Clear all, pinned too", () => ClipboardHistory.Clear(pinnedToo: true)));
-            }
-            ShowMenu(menu, TabClip);
-        };
+            var t = tab;
+            t.MouseRightButtonUp += (_, e) => { e.Handled = true; TabMenu(t); };
+        }
         TabNotes.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
         {
             if (mode == Mode.Open && TabNotes.IsChecked == true && NotesPanel.Children.Count > 0 && NotesPanel.Children[0] is NotesView notes)
@@ -1489,35 +1471,74 @@ public partial class NotchWindow : Window
         ((App)Application.Current).RefreshSettingsWindow();
     }
 
-    void MessagesTabMenu()
+    /// <summary>Right-click a tab: its own quick actions first (only those that apply right now), then moving, hiding and choosing tabs.</summary>
+    void TabMenu(RadioButton tab)
     {
         var menu = new ContextMenu();
-        var clear = MakeItem("Clear all messages", MessageCenter.DismissAll);
-        clear.IsEnabled = MessageCenter.Visible.Count > 0;
-        menu.Items.Add(clear);
-        menu.Items.Add(new Separator());
-        if (MessageCenter.MutedUntil is DateTime until)
-            menu.Items.Add(MakeItem($"Pop-ups snoozed until {(until.Date == DateTime.Today ? until.ToString("HH:mm") : until.ToString("ddd HH:mm"))}: turn back on",
-                () => { MessageCenter.MutedUntil = null; Note("Message pop-ups are back on"); }));
-        else
+        void Add(string header, Action act) => menu.Items.Add(MakeItem(header, act));
+
+        if (tab == TabClip)
         {
-            menu.Items.Add(MakeItem("Snooze pop-ups for 1 hour", () => { MessageCenter.MutedUntil = DateTime.Now.AddHours(1); Note("No pop-ups for an hour"); }));
-            menu.Items.Add(MakeItem("Snooze pop-ups until tomorrow", () => { MessageCenter.MutedUntil = DateTime.Today.AddDays(1).AddHours(8); Note("No pop-ups until 08:00 tomorrow"); }));
+            int pinned = ClipboardHistory.Items.Count(i => i.Pinned), all = ClipboardHistory.Items.Count;
+            if (all > pinned && pinned > 0) Add($"Clear all but the {pinned} pinned", () => ClipboardHistory.Clear(pinnedToo: false));
+            if (all > 0) Add(pinned > 0 ? "Clear all, pinned too" : "Clear all", () => ClipboardHistory.Clear(pinnedToo: true));
         }
-        ShowMenu(menu, TabMsgs);
+        else if (tab == TabMsgs)
+        {
+            if (MessageCenter.Visible.Count > 0) Add("Clear all messages", MessageCenter.DismissAll);
+            if (MessageCenter.MutedUntil is DateTime until)
+                Add($"Pop-ups snoozed until {(until.Date == DateTime.Today ? until.ToString("HH:mm") : until.ToString("ddd HH:mm"))}: turn back on",
+                    () => { MessageCenter.MutedUntil = null; Note("Message pop-ups are back on"); });
+            else
+            {
+                Add("Snooze pop-ups for 1 hour", () => { MessageCenter.MutedUntil = DateTime.Now.AddHours(1); Note("No pop-ups for an hour"); });
+                Add("Snooze pop-ups until tomorrow", () => { MessageCenter.MutedUntil = DateTime.Today.AddDays(1).AddHours(8); Note("No pop-ups until 08:00 tomorrow"); });
+            }
+        }
+        else if (tab == TabNotes)
+        {
+            if (NotesPanel.Children.Count == 0) NotesPanel.Children.Add(new NotesView(EnableTyping));
+            if (NotesPanel.Children[0] is NotesView notes && !notes.IsEmpty)
+            {
+                Add("Copy all", () => { notes.CopyAll(); Note("Notes copied ✓"); });
+                Add("Clear the page", () => { notes.Clear(); Note("Notes cleared (the old page is in notes.txt.bak)"); });
+            }
+        }
+        else if (tab == TabGames) Add("Look for new games now", () => { _ = GameLibrary.Refresh(); Note("Looking for new games…"); });
+        else if (tab == TabShelf && Shelf.Items.Count > 0) Add("Clear the shelf", () => Shelf.Items.Clear());
+        else if (tab == TabApps) Add("Add shortcuts…", () => { Collapse(); ((App)Application.Current).OpenSettings("Shortcuts"); });
+
+        // Every tab: move it, hide it, or pick tabs in Settings
+        if (menu.Items.Count > 0) menu.Items.Add(new Separator());
+        var shown = TabsRow.Children.OfType<RadioButton>().ToList();
+        int at = shown.IndexOf(tab);
+        if (at > 0) Add("Move left", () => MoveTab(tab, -1));
+        if (at >= 0 && at < shown.Count - 1) Add("Move right", () => MoveTab(tab, +1));
+        if (shown.Count > 1) Add("Hide this tab", () =>
+        {
+            var id = IdOf(tab);
+            if (id == null) return;
+            S.NotchTabs.Remove(id);
+            SettingsStore.Save();
+            ((App)Application.Current).ApplyAll();
+            ((App)Application.Current).RefreshSettingsWindow();
+            Note("Tab hidden. Bring it back in Settings › Notch");
+        });
+        Add("Choose tabs…", () => { Collapse(); ((App)Application.Current).OpenSettings("Notch"); });
+        ShowMenu(menu, tab);
     }
 
-    void NotesTabMenu()
+    string? IdOf(RadioButton tab) => NotchCatalog.Tabs.Select(t => t.id).FirstOrDefault(id => TabFor(id) == tab);
+
+    void MoveTab(RadioButton tab, int by)
     {
-        if (NotesPanel.Children.Count == 0) NotesPanel.Children.Add(new NotesView(EnableTyping));
-        if (NotesPanel.Children[0] is not NotesView notes) return;
-        var menu = new ContextMenu();
-        var copy = MakeItem("Copy all", () => { notes.CopyAll(); Note("Notes copied ✓"); });
-        var clear = MakeItem("Clear the page", () => { notes.Clear(); Note("Notes cleared (the old page is in notes.txt.bak)"); });
-        copy.IsEnabled = clear.IsEnabled = !notes.IsEmpty;
-        menu.Items.Add(copy);
-        menu.Items.Add(clear);
-        ShowMenu(menu, TabNotes);
+        var id = IdOf(tab);
+        int i = id == null ? -1 : S.NotchTabs.IndexOf(id);
+        if (i < 0 || i + by < 0 || i + by >= S.NotchTabs.Count) return;
+        (S.NotchTabs[i], S.NotchTabs[i + by]) = (S.NotchTabs[i + by], S.NotchTabs[i]);
+        SettingsStore.Save();
+        ((App)Application.Current).ApplyAll();
+        ((App)Application.Current).RefreshSettingsWindow();
     }
 
     static MenuItem MakeItem(string header, Action action)

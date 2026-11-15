@@ -1552,6 +1552,7 @@ public sealed class SettingsWindow : Window
                 Row("Badges on app icons", "A red dot or count when an app has something for you (a notification, unread messages, or it asked for attention)",
                     Switch(S.DockBadges, v => { S.DockBadges = v; Commit(); })),
                 Row("Task Manager button", "A button next to the tray that opens Task Manager", Switch(S.DockTaskManager, v => { S.DockTaskManager = v; Commit(); })),
+                Row("Settings button", "A button next to the tray that opens Windows Settings or Brim's settings", Switch(S.DockSettingsButton, v => { S.DockSettingsButton = v; Commit(); })),
                 Info("Tray icons", "Click ⌃ on the dock to bring Windows' taskbar up for a moment")
             );
 
