@@ -22,7 +22,23 @@ public sealed class TrayIconItem : Observable
     public ImageSource? Icon { get => icon; set => Set(ref icon, value); }
 
     string tip = "";
-    public string Tip { get => tip; set => Set(ref tip, value); }
+    public string Tip { get => tip; set { Set(ref tip, value); RaiseChanged(nameof(Label)); } }
+
+    string? appName;
+
+    /// <summary>
+    /// What to call it when you point at it: the app's own tooltip, or, when it never set one (most apps, or it set
+    /// it before Brim was listening), the app's name from its program ("Steam", "NVIDIA App"…).
+    /// </summary>
+    public string Label => !string.IsNullOrWhiteSpace(tip) ? tip : appName ??= NameOfApp();
+
+    string NameOfApp()
+    {
+        uint pid = Pid;
+        if (pid == 0) Native.GetWindowThreadProcessId(new IntPtr(HWnd), out pid);
+        var path = pid != 0 ? Native.ProcessPath(pid) : null;
+        return path != null ? IconHelper.NiceName(path) : "";
+    }
 
     bool hidden;
     public bool Hidden { get => hidden; set => Set(ref hidden, value); }

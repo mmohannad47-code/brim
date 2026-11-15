@@ -29,6 +29,32 @@
     <SolidColorBrush x:Key="Set.Line" Color="#FF2A2A31"/>
 
     <!-- Icon button -->
+    <!-- A close (X) button: red with a white X under the pointer, like Windows' own -->
+    <Style x:Key="CloseButton" TargetType="Button">
+        <Setter Property="Foreground" Value="{DynamicResource Brim.Text}"/>
+        <Setter Property="FontFamily" Value="{StaticResource Brim.Icons}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="Transparent" CornerRadius="6">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#FFE81123"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#FFC50F1F"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="IconButton" TargetType="Button">
         <Setter Property="Foreground" Value="{DynamicResource Brim.Text}"/>
         <Setter Property="FontFamily" Value="{StaticResource Brim.Icons}"/>

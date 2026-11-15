@@ -87,7 +87,7 @@ public sealed class WindowPreview : Window
             Grid.SetColumn(title, 1);
             head.Children.Add(title);
             var close = new Button { Content = "", Width = 20, Height = 20, FontSize = 9, ToolTip = "Close window" };
-            close.SetResourceReference(StyleProperty, "IconButton");
+            close.SetResourceReference(StyleProperty, "CloseButton");
             close.Click += (_, _) => { Native.PostMessage(win.Hwnd, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero); Close(); };
             Grid.SetColumn(close, 2);
             head.Children.Add(close);
@@ -162,10 +162,22 @@ public sealed class WindowPreview : Window
             Native.RECT r;
             if (Native.IsIconic(hwnd))
             {
-                // Minimised: the size it has when restored, without its invisible border
                 var p = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
                 GetWindowPlacement(hwnd, ref p);
                 r = p.normal;
+                // Minimised from maximised (Chrome while you're on the desktop): Windows' last picture of it is the
+                // maximised window, so its shape is its screen's, not the smaller size it would restore to
+                if ((p.flags & 0x2 /* WPF_RESTORETOMAXIMIZED */) != 0)
+                {
+                    var mon = Native.MonitorFromPoint(new Native.POINT { X = (r.Left + r.Right) / 2, Y = (r.Top + r.Bottom) / 2 }, 2);
+                    var mi = new Native.MONITORINFO { cbSize = Marshal.SizeOf<Native.MONITORINFO>() };
+                    if (Native.GetMonitorInfo(mon, ref mi))
+                    {
+                        double mw = mi.rcWork.Right - mi.rcWork.Left, mh = mi.rcWork.Bottom - mi.rcWork.Top;
+                        if (mw > 50 && mh > 50) return mw / mh;
+                    }
+                }
+                // Otherwise the size it has when restored, without its invisible border
                 var (l, t, rr, b) = BordersOf(hwnd);
                 double ww = (r.Right - r.Left) * (1 - l - rr), hh = (r.Bottom - r.Top) * (1 - t - b);
                 if (ww > 50 && hh > 50) return ww / hh;
@@ -182,8 +194,9 @@ public sealed class WindowPreview : Window
 
     /// <summary>
     /// Preview sizes (DIPs), each exactly its window's shape so the picture fills it edge to edge.
-    /// One window: 260 wide if it's wide, 300 tall if it's tall. Several (Steam's main window and its friends list):
-    /// all the same height, like Windows' own previews, each as wide as its shape needs.
+    /// One window: about the same amount of picture whatever its shape (a squarer window like Steam's used to come
+    /// out much taller than a wide one like Chrome's). Several (Steam's main window and its friends list): all the
+    /// same height, like Windows' own previews, each as wide as its shape needs.
     /// </summary>
     static List<(double w, double h)> SlotsFor(List<IntPtr> windows)
     {
@@ -191,14 +204,17 @@ public sealed class WindowPreview : Window
         var result = new List<(double, double)>();
         if (aspects.Count == 1)
         {
-            double a = aspects[0], w, h;
-            if (a >= 1) { w = 210; h = w / a; if (h < 84) { h = 84; w = h * a; } }
-            else { h = 240; w = h * a; if (w < 90) { w = 90; h = w / a; } }
+            const double area = 210 * 124; // a maximised window on a 16:10 screen: 210 × 124
+            double a = aspects[0], w = Math.Sqrt(area * a), h = Math.Sqrt(area / a);
+            if (w > 240) { w = 240; h = w / a; }
+            if (h > 220) { h = 220; w = h * a; }
+            if (w < 90) { w = 90; h = w / a; }   // very tall: room for the title
+            if (h < 84) { h = 84; w = h * a; }   // very wide: still a picture you can make out
             result.Add((Math.Round(w), Math.Round(h)));
             return result;
         }
         // A shared height: taller when a tall window is among them, so it doesn't end up a sliver
-        double row = aspects.Any(a => a < 1) ? 170 : 130;
+        double row = aspects.Any(a => a < 1) ? 140 : 112;
         foreach (var a in aspects)
         {
             double w = row * a, h = row;
@@ -260,6 +276,18 @@ public sealed class WindowPreview : Window
             tall.Content = new TextBlock { Text = "Friends\n\nAlex\nSam\nJordan\nTaylor", Foreground = Brushes.White, FontSize = 22, Margin = new Thickness(20) };
             tall.Show();
             await System.Threading.Tasks.Task.Delay(400);
+            win = new AppWindow { Hwnd = new WindowInteropHelper(tall).Handle, Title = tall.Title };
+        }
+        if (mode == "3")
+        {
+            // Maximised, then minimised (Chrome while you're on the desktop): the preview must have the maximised shape
+            tall = new Window { Title = "Maximised then minimised (test)", Width = 500, Height = 600, Left = 40, Top = 40, ShowActivated = false, Background = new LinearGradientBrush(Colors.DarkOrange, Colors.Purple, 0) };
+            tall.Content = new TextBlock { Text = "Maximised window", Foreground = Brushes.White, FontSize = 40, Margin = new Thickness(40) };
+            tall.Show();
+            tall.WindowState = WindowState.Maximized;
+            await System.Threading.Tasks.Task.Delay(700);
+            tall.WindowState = WindowState.Minimized;
+            await System.Threading.Tasks.Task.Delay(700);
             win = new AppWindow { Hwnd = new WindowInteropHelper(tall).Handle, Title = tall.Title };
         }
         if (win == null) { System.IO.File.WriteAllText(png + ".txt", "no window"); return; }
@@ -325,6 +353,18 @@ public sealed class WindowPreview : Window
             };
             var topLeft = toDevice.Transform(slot.TransformToAncestor(this).Transform(new Point(0, 0)));
             var size = toDevice.Transform(new Point(slot.ActualWidth, slot.ActualHeight));
+            Debug += $"[slot {slot.ActualWidth:0}x{slot.ActualHeight:0}] ";
+            // Never stretch: if the picture's shape still differs from the slot's (a window that changed size since
+            // its last picture), fit it inside, centred, instead of squashing it
+            double pictureAspect = (double)(source.Right - source.Left) / Math.Max(1, source.Bottom - source.Top);
+            double slotAspect = size.X / Math.Max(1, size.Y);
+            if (Math.Abs(pictureAspect / slotAspect - 1) > 0.03)
+            {
+                var fitted = pictureAspect > slotAspect ? new Point(size.X, size.X / pictureAspect) : new Point(size.Y * pictureAspect, size.Y);
+                topLeft = new Point(topLeft.X + (size.X - fitted.X) / 2, topLeft.Y + (size.Y - fitted.Y) / 2);
+                size = fitted;
+                Debug += $"[{win.Title}: fitted, picture {pictureAspect:0.00} vs slot {slotAspect:0.00}] ";
+            }
             int x = (int)Math.Round(topLeft.X), y = (int)Math.Round(topLeft.Y);
 
             var props = new THUMBPROPS

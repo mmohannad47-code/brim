@@ -787,7 +787,7 @@ public sealed class TrayPanel : StackPanel
             img.SetBinding(Image.SourceProperty, new Binding(nameof(TrayIconItem.Icon)) { Source = item });
             RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
             var cell = new Border { Width = 40, Height = 40, Margin = new Thickness(2), CornerRadius = new CornerRadius(10), Background = Brushes.Transparent, Child = img, Cursor = Cursors.Hand };
-            cell.SetBinding(ToolTipProperty, new Binding(nameof(TrayIconItem.Tip)) { Source = item });
+            cell.SetBinding(ToolTipProperty, new Binding(nameof(TrayIconItem.Label)) { Source = item });
             cell.MouseEnter += (_, _) => cell.SetResourceReference(Border.BackgroundProperty, "Brim.Hover");
             cell.MouseLeave += (_, _) => cell.Background = Brushes.Transparent;
             // Close this panel first and let focus settle, then pass the click on, so the app's own menu or window
