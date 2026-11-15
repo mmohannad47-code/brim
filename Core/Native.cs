@@ -60,7 +60,7 @@ internal static class Native
 
     public const uint ABM_NEW = 0, ABM_REMOVE = 1, ABM_QUERYPOS = 2, ABM_SETPOS = 3, ABM_GETSTATE = 4, ABM_SETSTATE = 10;
     public const int ABS_AUTOHIDE = 1, ABS_ALWAYSONTOP = 2;
-    public const uint ABE_BOTTOM = 3;
+    public const uint ABE_LEFT = 0, ABE_RIGHT = 2, ABE_BOTTOM = 3;
     public const int ABN_POSCHANGED = 1, ABN_FULLSCREENAPP = 2;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -254,11 +254,19 @@ internal static class Native
     /// Is an app window focused (Chrome, Explorer, a game…)? False for the desktop and the taskbar;
     /// null for things that shouldn't change anything (Start, Search, Brim's own pop-ups).
     /// </summary>
+    /// <summary>
+    /// Windows' own switching is on screen: Alt+Tab, Task View, a three- or four-finger swipe, or the moment between
+    /// two apps or desktops. Brim holds still meanwhile, so the notch and dock don't slide about under Windows' animation.
+    /// </summary>
+    public static bool SwitcherInFront() =>
+        ClassOf(GetForegroundWindow()) is "XamlExplorerHostIslandWindow" or "MultitaskingViewFrame" or "ForegroundStaging" or "TaskSwitcherWnd";
+
     public static bool? AppInFront()
     {
         var fg = GetForegroundWindow();
         if (fg == IntPtr.Zero) return false;
         var cls = ClassOf(fg);
+        if (cls is "ForegroundStaging" or "MultitaskingViewFrame" or "TaskSwitcherWnd") return null; // switching: no change
         if (cls is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd") return false;
         if (cls is "Windows.UI.Core.CoreWindow" or "XamlExplorerHostIslandWindow" or "TopLevelWindowForOverflowXamlIsland") return null;
         if (!IsWindowVisible(fg) || IsIconic(fg)) return false;

@@ -76,10 +76,19 @@ public sealed class DockApp : Observable
     public double BadgeWidth => string.IsNullOrEmpty(badge) ? 9 : badge.Length > 1 ? 20 : 15;
     public double BadgeHeight => string.IsNullOrEmpty(badge) ? 9 : 15;
     public double DotWidth => active || attention ? 14 : 5;
+
+    /// <summary>The dock's edge ("Bottom", "Left", "Right"): the running mark sits on the screen side of the icon.</summary>
+    public static string Side { get; set; } = "Bottom";
+    bool Across => Side != "Bottom";
+    public double DotW => Across ? 3 : DotWidth;
+    public double DotH => Across ? DotWidth : 3;
+    public HorizontalAlignment DotHAlign => Side switch { "Left" => HorizontalAlignment.Left, "Right" => HorizontalAlignment.Right, _ => HorizontalAlignment.Center };
+    public VerticalAlignment DotVAlign => Across ? VerticalAlignment.Center : VerticalAlignment.Bottom;
+    public Thickness DotMargin => Side switch { "Left" => new Thickness(1, 0, 0, 0), "Right" => new Thickness(0, 0, 1, 0), _ => new Thickness(0, 0, 0, 1) };
     static readonly Brush Orange = new SolidColorBrush(Color.FromRgb(0xFF, 0x9F, 0x0A));
     public Brush DotBrush => attention ? Orange : active ? (Brush)Application.Current.FindResource("Brim.Accent") : (Brush)Application.Current.FindResource("Brim.Dim");
 
-    void OnDot() { OnChanged(nameof(DotVisibility)); OnChanged(nameof(DotWidth)); OnChanged(nameof(DotBrush)); }
+    void OnDot() { OnChanged(nameof(DotVisibility)); OnChanged(nameof(DotWidth)); OnChanged(nameof(DotW)); OnChanged(nameof(DotH)); OnChanged(nameof(DotBrush)); }
     void OnChanged(string name) => RaiseChanged(name);
 }
 
@@ -93,6 +102,7 @@ public partial class DockWindow : Window
     readonly DispatcherTimer edge = new() { Interval = TimeSpan.FromMilliseconds(50) };
     IntPtr hwnd;
     bool appBar, shownByEdge, fullscreen;
+    string? laidOutSide;
     DateTime leftAt = DateTime.MaxValue;
     uint appBarMsg;
     int reservedPx;
@@ -188,26 +198,95 @@ public partial class DockWindow : Window
         ApplyShape();
     }
 
+    // ---------- which edge the dock sits on: the bottom (like Windows' taskbar), or the left or right side
+
+    /// <summary>The edge of the screen the dock is on: "Bottom", "Left" or "Right".</summary>
+    static string Side => S.DockSide is "Left" or "Right" ? S.DockSide : "Bottom";
+    static bool Vertical => Side != "Bottom";
+    /// <summary>How deep the dock reaches into the screen from its edge (its height at the bottom, its width on a side).</summary>
+    double Depth => Vertical ? ActualWidth : ActualHeight;
+    static uint AppBarEdge => Side switch { "Left" => Native.ABE_LEFT, "Right" => Native.ABE_RIGHT, _ => Native.ABE_BOTTOM };
+    /// <summary>Menus open away from the edge: above a bottom dock, beside a side one.</summary>
+    static System.Windows.Controls.Primitives.PlacementMode MenuPlacement => Side switch
+    {
+        "Left" => System.Windows.Controls.Primitives.PlacementMode.Right,
+        "Right" => System.Windows.Controls.Primitives.PlacementMode.Left,
+        _ => System.Windows.Controls.Primitives.PlacementMode.Top,
+    };
+    /// <summary>The thin line along the screen side of a full-length bar.</summary>
+    static Thickness DockedBorder => Side switch { "Left" => new Thickness(0, 0, 1, 0), "Right" => new Thickness(1, 0, 0, 0), _ => new Thickness(0, 1, 0, 0) };
+
+    /// <summary>For pop-ups shown from a dock (previews, panels): which side to open on.</summary>
+    public static string SideFor(DependencyObject anchor) => GetWindow(anchor) is DockWindow ? Side : "Bottom";
+
+    /// <summary>A row along the bottom, or a column down a side: the same parts, turned.</summary>
+    void ApplyLayout()
+    {
+        bool v = Vertical;
+        var o = v ? Orientation.Vertical : Orientation.Horizontal;
+        BarContent.Orientation = o;
+        var panel = new FrameworkElementFactory(typeof(StackPanel));
+        panel.SetValue(StackPanel.OrientationProperty, o);
+        Apps.ItemsPanel = new ItemsPanelTemplate(panel);
+        Sep.Width = v ? double.NaN : 1;
+        Sep.Height = v ? 1 : double.NaN;
+        Sep.Margin = v ? new Thickness(10, 6, 10, 6) : new Thickness(6, 10, 6, 10);
+        // The weather and status groups stack up on a side, and their parts sit under each other
+        foreach (var stack in new[] { WeatherStack, StatusStack })
+        {
+            stack.Orientation = o;
+            stack.Margin = v ? new Thickness(0, 9, 0, 9) : new Thickness(10, 0, 10, 0);
+        }
+        foreach (var (part, across) in new (FrameworkElement, double)[] { (WeatherTemp, 6), (VolGlyph, 10), (BatteryText, 10), (VolText, 5) })
+        {
+            part.Margin = v ? new Thickness(0, 6, 0, 0) : new Thickness(across, 0, 0, 0);
+            part.HorizontalAlignment = v ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+        }
+        NetGlyph.HorizontalAlignment = WeatherGlyph.HorizontalAlignment = v ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+        ClockStack.Margin = v ? new Thickness(0, 7, 0, 7) : new Thickness(10, 0, 10, 0);
+        TimeText.HorizontalAlignment = DateText.HorizontalAlignment = v ? HorizontalAlignment.Center : HorizontalAlignment.Right;
+        LangStack.Margin = v ? new Thickness(0, 6, 0, 6) : new Thickness(8, 0, 8, 0);
+        // Show desktop: a sliver at the end of the bar, across it
+        DesktopLine.Width = v ? 20 : 2;
+        DesktopLine.Height = v ? 2 : 20;
+        DesktopBtn.Margin = v ? new Thickness(0, 4, 0, -2) : new Thickness(4, 0, -2, 0);
+    }
+
     void ApplyShape()
     {
+        bool v = Vertical;
+        var screen = Native.ScreenDip(ScreenId);
         if (docked)
         {
-            SizeToContent = SizeToContent.Height;
-            Width = Native.ScreenDip(ScreenId).Width;
+            if (v) { SizeToContent = SizeToContent.Width; ClearValue(WidthProperty); Height = screen.Height; }
+            else { SizeToContent = SizeToContent.Height; ClearValue(HeightProperty); Width = screen.Width; }
             Bar.Margin = new Thickness(0);
             Bar.CornerRadius = new CornerRadius(0);
-            Bar.Padding = new Thickness(6, S.DockPadding + 4, 6, S.DockPadding + 5);
+            Bar.Padding = v ? new Thickness(S.DockPadding + 4, 6, S.DockPadding + 5, 6) : new Thickness(6, S.DockPadding + 4, 6, S.DockPadding + 5);
             // The icons stay where you put the dock, even when it stretches into a bar
-            BarContent.HorizontalAlignment = S.DockPosition == "Left" ? HorizontalAlignment.Left : S.DockPosition == "Right" ? HorizontalAlignment.Right : HorizontalAlignment.Center;
-            BarContent.Margin = new Thickness(S.DockPosition == "Left" ? 10 : 0, 0, S.DockPosition == "Right" ? 10 : 0, 0);
+            if (v)
+            {
+                BarContent.HorizontalAlignment = HorizontalAlignment.Stretch;
+                BarContent.VerticalAlignment = S.DockPosition == "Left" ? VerticalAlignment.Top : S.DockPosition == "Right" ? VerticalAlignment.Bottom : VerticalAlignment.Center;
+                BarContent.Margin = new Thickness(0, S.DockPosition == "Left" ? 10 : 0, 0, S.DockPosition == "Right" ? 10 : 0);
+            }
+            else
+            {
+                BarContent.VerticalAlignment = VerticalAlignment.Stretch;
+                BarContent.HorizontalAlignment = S.DockPosition == "Left" ? HorizontalAlignment.Left : S.DockPosition == "Right" ? HorizontalAlignment.Right : HorizontalAlignment.Center;
+                BarContent.Margin = new Thickness(S.DockPosition == "Left" ? 10 : 0, 0, S.DockPosition == "Right" ? 10 : 0, 0);
+            }
         }
         else
         {
             SizeToContent = SizeToContent.WidthAndHeight;
+            ClearValue(WidthProperty);
+            ClearValue(HeightProperty);
             BarContent.Margin = new Thickness(0);
-            Bar.Margin = new Thickness(0, 0, 0, Math.Clamp(S.DockGap, 0, 60));
+            double gap = Math.Clamp(S.DockGap, 0, 60), pad = Math.Clamp(S.DockPadding, 0, 30);
+            Bar.Margin = Side switch { "Left" => new Thickness(gap, 0, 0, 0), "Right" => new Thickness(0, 0, gap, 0), _ => new Thickness(0, 0, 0, gap) };
             Bar.CornerRadius = new CornerRadius(Math.Clamp(S.DockRadius, 0, 40));
-            Bar.Padding = new Thickness(6, Math.Clamp(S.DockPadding, 0, 30), 6, Math.Clamp(S.DockPadding, 0, 30));
+            Bar.Padding = v ? new Thickness(pad, 6, pad, 6) : new Thickness(6, pad, 6, pad);
         }
         ApplySurface();
         Place();
@@ -227,7 +306,7 @@ public partial class DockWindow : Window
                 var c = own ?? ThemeManager.Parse(ThemeManager.Current.Surface);
                 Bar.Background = new SolidColorBrush(Backdrop.Tint(c, own != null ? (byte)0xA0 : (byte)0x66));
                 Bar.SetResourceReference(Border.BorderBrushProperty, "Brim.Stroke");
-                Bar.BorderThickness = docked ? new Thickness(0, 1, 0, 0) : new Thickness(1);
+                Bar.BorderThickness = docked ? DockedBorder : new Thickness(1);
                 BarContent.Effect = null;
                 if (Backdrop.Available) backdrop ??= new Backdrop();
                 else { backdrop?.Dispose(); backdrop = null; }
@@ -243,7 +322,7 @@ public partial class DockWindow : Window
                 if (own is Color oc) Bar.Background = new SolidColorBrush(oc);
                 else Bar.SetResourceReference(Border.BackgroundProperty, "Brim.Surface");
                 Bar.SetResourceReference(Border.BorderBrushProperty, "Brim.Stroke");
-                Bar.BorderThickness = docked ? new Thickness(0, 1, 0, 0) : new Thickness(1);
+                Bar.BorderThickness = docked ? DockedBorder : new Thickness(1);
                 BarContent.Effect = null;
                 backdrop?.Dispose();
                 backdrop = null;
@@ -268,16 +347,29 @@ public partial class DockWindow : Window
         if (docked && S.DockWhenMaximized != "Bar") docked = false;
         TaskMgrBtn.Visibility = S.DockTaskManager ? Visibility.Visible : Visibility.Collapsed;
         SettingsBtn.Visibility = S.DockSettingsButton ? Visibility.Visible : Visibility.Collapsed;
+        // Moved to another edge: give back the old strip first (Windows keeps one per edge)
+        if (laidOutSide != Side) { RemoveAppBar(); laidOutSide = Side; reorder = null; }
+        DockApp.Side = Side;
+        ApplyLayout();
         ApplyShape(); // size, gap, roundness and position may have changed
         ApplySurface();
         var (tile, _) = Sizes;
         StartBtn.Width = StartBtn.Height = tile;
-        TrayBtn.Height = tile;
-        StatusBtn.Height = tile;
-        WeatherBtn.Height = tile;
-        DesktopBtn.Height = tile;
-        ClockBtn.Height = tile;
-        LangBtn.Height = tile;
+        if (Vertical)
+        {
+            // A column as wide as an icon: the small buttons get their height back, the others size to what they show
+            foreach (var b in new[] { TrayBtn, TaskMgrBtn, SettingsBtn }) { b.Width = tile; b.Height = 30; }
+            foreach (var b in new[] { StatusBtn, WeatherBtn, ClockBtn, LangBtn }) { b.Width = tile; b.Height = double.NaN; }
+            DesktopBtn.Width = tile;
+            DesktopBtn.Height = 16;
+        }
+        else
+        {
+            foreach (var b in new[] { TrayBtn, TaskMgrBtn, SettingsBtn }) { b.Width = 30; b.Height = tile; }
+            foreach (var b in new[] { StatusBtn, WeatherBtn, ClockBtn, LangBtn }) { b.Width = double.NaN; b.Height = tile; }
+            DesktopBtn.Width = 16;
+            DesktopBtn.Height = tile;
+        }
         ClockBtn.Visibility = S.DockClock ? Visibility.Visible : Visibility.Collapsed;
         pinTargets.Clear();
         known.Clear();
@@ -302,7 +394,7 @@ public partial class DockWindow : Window
         UpdateLanguage();
         var now = DateTime.Now;
         TimeText.Text = now.ToString(S.Clock24 ? "HH:mm" : "h:mm tt");
-        DateText.Text = now.ToString("ddd d MMM");
+        DateText.Text = now.ToString(Vertical ? "d MMM" : "ddd d MMM"); // (a side dock is narrow)
     }
 
     // ------------------------------------------------------------------ placement
@@ -312,20 +404,34 @@ public partial class DockWindow : Window
         if (ActualWidth <= 0) return;
         var screen = Native.ScreenDip(ScreenId);
         const double gap = 12;
-        Left = docked ? screen.Left + (screen.Width - ActualWidth) / 2 : S.DockPosition switch
+        if (Vertical)
         {
-            "Left" => screen.Left + gap,
-            "Right" => screen.Left + screen.Width - ActualWidth - gap,
-            _ => screen.Left + (screen.Width - ActualWidth) / 2,
-        };
+            // Down a side: "Left / Center / Right" in settings mean top, middle and bottom of it
+            Left = Side == "Left" ? screen.Left : screen.Right - ActualWidth;
+            Top = docked ? screen.Top + (screen.Height - ActualHeight) / 2 : S.DockPosition switch
+            {
+                "Left" => screen.Top + gap,
+                "Right" => screen.Bottom - ActualHeight - gap,
+                _ => screen.Top + (screen.Height - ActualHeight) / 2,
+            };
+        }
+        else
+        {
+            Left = docked ? screen.Left + (screen.Width - ActualWidth) / 2 : S.DockPosition switch
+            {
+                "Left" => screen.Left + gap,
+                "Right" => screen.Left + screen.Width - ActualWidth - gap,
+                _ => screen.Left + (screen.Width - ActualWidth) / 2,
+            };
+            Top = screen.Bottom - ActualHeight;
+        }
         bool hidden = fullscreen || S.DockAutoHide && !shownByEdge;
-        // The window stays put; the bar slides down out of sight and back. (The window's empty, see-through parts
-        // let clicks through, so a hidden dock doesn't get in the way.)
-        Top = screen.Bottom - ActualHeight;
-        Slide(hidden ? ActualHeight : 0);
+        // The window stays put; the bar slides off its edge out of sight and back. (The window's empty, see-through
+        // parts let clicks through, so a hidden dock doesn't get in the way.)
+        Slide(hidden ? Depth : 0);
         if (appBar && !S.DockAutoHide)
         {
-            int px = (int)Math.Ceiling(ActualHeight * Dpi());
+            int px = (int)Math.Ceiling(Depth * Dpi());
             if (px != reservedPx) SetupAppBar();
         }
     }
@@ -364,7 +470,13 @@ public partial class DockWindow : Window
         };
         // Smooth on the GPU: draw the bar once and move the picture, instead of re-drawing every icon each frame
         Bar.CacheMode = new BitmapCache { RenderAtScale = Dpi(), SnapsToDevicePixels = true };
-        slide.BeginAnimation(TranslateTransform.YProperty, move);
+        // Off its own edge: down at the bottom, left or right on a side
+        var along = Vertical ? TranslateTransform.XProperty : TranslateTransform.YProperty;
+        var across = Vertical ? TranslateTransform.YProperty : TranslateTransform.XProperty;
+        if (Side == "Left") move.To = -to;
+        slide.BeginAnimation(across, null);
+        slide.SetValue(across, 0.0);
+        slide.BeginAnimation(along, move);
         Bar.BeginAnimation(OpacityProperty, fade);
     }
 
@@ -380,9 +492,20 @@ public partial class DockWindow : Window
         Native.GetCursorPos(out var pt);
         var mon = Native.ScreenOrPrimary(ScreenId).Bounds;
         double scale = Dpi();
-        bool atEdge = pt.Y >= mon.Bottom - 2 && pt.X >= mon.Left && pt.X < mon.Right;
-        bool overDock = IsMouseOver || pt.Y >= mon.Bottom - (ActualHeight + 6) * scale &&
-                        pt.X >= Left * scale - 10 && pt.X <= (Left + ActualWidth) * scale + 10;
+        bool atEdge = Side switch
+        {
+            "Left" => pt.X <= mon.Left + 1 && pt.Y >= mon.Top && pt.Y < mon.Bottom,
+            "Right" => pt.X >= mon.Right - 2 && pt.Y >= mon.Top && pt.Y < mon.Bottom,
+            _ => pt.Y >= mon.Bottom - 2 && pt.X >= mon.Left && pt.X < mon.Right,
+        };
+        bool alongDock = Vertical ? pt.Y >= Top * scale - 10 && pt.Y <= (Top + ActualHeight) * scale + 10
+                                  : pt.X >= Left * scale - 10 && pt.X <= (Left + ActualWidth) * scale + 10;
+        bool overDock = IsMouseOver || alongDock && Side switch
+        {
+            "Left" => pt.X <= mon.Left + (ActualWidth + 6) * scale,
+            "Right" => pt.X >= mon.Right - (ActualWidth + 6) * scale,
+            _ => pt.Y >= mon.Bottom - (ActualHeight + 6) * scale,
+        };
 
         if (!shownByEdge && atEdge)
         {
@@ -416,8 +539,8 @@ public partial class DockWindow : Window
         if (fs)
         {
             // Slide out of the way quickly, then hide properly (nothing of Brim's left on top of a game or video)
-            if (slideTarget >= ActualHeight && !slideRunning) Visibility = Visibility.Hidden;
-            else Slide(ActualHeight, fast: true, done: () => { if (fullscreen) Visibility = Visibility.Hidden; });
+            if (slideTarget >= Depth && !slideRunning) Visibility = Visibility.Hidden;
+            else Slide(Depth, fast: true, done: () => { if (fullscreen) Visibility = Visibility.Hidden; });
         }
         else
         {
@@ -441,9 +564,9 @@ public partial class DockWindow : Window
         if (hwnd == IntPtr.Zero || S.DockAutoHide || !S.DockReserve || ActualHeight <= 0) return;
         if (appBarMsg == 0) appBarMsg = Native.RegisterWindowMessage("BrimDockAppBar");
         var mon = Native.ScreenOrPrimary(ScreenId).Bounds;
-        reservedPx = (int)Math.Ceiling(ActualHeight * Dpi());
+        reservedPx = (int)Math.Ceiling(Depth * Dpi());
         // Straight to Explorer (it owns the work area), not through Brim's own tray window
-        DockAppBar.Reserve(hwnd, reservedPx, direct: true, callback: appBarMsg, monitor: mon, alreadyRegistered: appBar);
+        DockAppBar.Reserve(hwnd, reservedPx, direct: true, callback: appBarMsg, monitor: mon, alreadyRegistered: appBar, edge: AppBarEdge);
         appBar = true;
     }
 
@@ -477,8 +600,8 @@ public partial class DockWindow : Window
         have = want = 0;
         var mi = new Native.MONITORINFO { cbSize = Marshal.SizeOf<Native.MONITORINFO>() };
         if (!Native.GetMonitorInfo(Native.ScreenOrPrimary(ScreenId).Handle, ref mi)) return false;
-        want = (int)Math.Ceiling(ActualHeight * Dpi());
-        have = mi.rcMonitor.Bottom - mi.rcWork.Bottom;
+        want = (int)Math.Ceiling(Depth * Dpi());
+        have = Side switch { "Left" => mi.rcWork.Left - mi.rcMonitor.Left, "Right" => mi.rcMonitor.Right - mi.rcWork.Right, _ => mi.rcMonitor.Bottom - mi.rcWork.Bottom };
         return !appBar || have < want - 2;
     }
 
@@ -800,7 +923,8 @@ public partial class DockWindow : Window
     void App_DragMove(object sender, MouseEventArgs e)
     {
         if (pressed == null || dragging || e.LeftButton != MouseButtonState.Pressed || S.DockLocked) return;
-        if (Math.Abs(e.GetPosition(Apps).X - pressAt.X) < 8) return;
+        var moved = e.GetPosition(Apps) - pressAt;
+        if (Math.Abs(Vertical ? moved.Y : moved.X) < 8) return; // along the dock (down it, on a side)
         // Past the threshold: lift the icon and carry it (the others slide aside as it passes them)
         if (Apps.ItemContainerGenerator.ContainerFromItem(pressed) is not FrameworkElement box || VisualTreeHelper.GetParent(box) is not Panel host) return;
         dragging = true;
@@ -821,6 +945,7 @@ public partial class DockWindow : Window
             swallowClick = true;
             Dispatcher.BeginInvoke(new Action(() => swallowClick = false), DispatcherPriority.Input);
         }, lift: -6, liftScale: 1.15);
+        reorder.Vertical = Vertical;
         reorder.Begin(box, e.GetPosition(host));
     }
 
@@ -1048,7 +1173,7 @@ public partial class DockWindow : Window
         HoverMenu.SetOwner(menu, (FrameworkElement)tile); // closes itself once the pointer leaves the app and the menu
         menu.Closed += (_, _) => IsAnyMenuOpen = false;
         menu.PlacementTarget = tile;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
+        menu.Placement = MenuPlacement;
         menu.IsOpen = true;
     }
 
@@ -1264,7 +1389,7 @@ public partial class DockWindow : Window
         HoverMenu.SetOwner(menu, LangBtn);
         menu.Closed += (_, _) => IsAnyMenuOpen = false;
         menu.PlacementTarget = LangBtn;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
+        menu.Placement = MenuPlacement;
         menu.IsOpen = true;
     }
 

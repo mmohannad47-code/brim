@@ -373,6 +373,15 @@ public sealed class Flyout : Window
     void Place()
     {
         if (PresentationSource.FromVisual(anchor) is not { CompositionTarget: { } ct }) return;
+        var side = DockWindow.SideFor(anchor);
+        if (side != "Bottom")
+        {
+            // From a dock down a side: the panel opens beside it, level with the button (kept on screen)
+            var edge = ct.TransformFromDevice.Transform(anchor.PointToScreen(new Point(side == "Left" ? anchor.ActualWidth : 0, anchor.ActualHeight / 2)));
+            Left = side == "Left" ? edge.X + 8 : edge.X - ActualWidth - 8;
+            Top = Math.Clamp(edge.Y - ActualHeight / 2, SystemParameters.VirtualScreenTop + 8, SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight - ActualHeight - 8);
+            return;
+        }
         var topCentre = anchor.PointToScreen(new Point(anchor.ActualWidth / 2, 0));
         var dip = ct.TransformFromDevice.Transform(topCentre);
         double left = dip.X - ActualWidth / 2;

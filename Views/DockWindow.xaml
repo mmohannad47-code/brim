@@ -47,8 +47,8 @@
                                        RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 <TextBlock Text="&#xE737;" FontFamily="{StaticResource Brim.Icons}" FontSize="18" Visibility="{Binding GlyphVisibility}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                <Border Height="3" CornerRadius="1.5" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,1"
-                                        Width="{Binding DotWidth}" Background="{Binding DotBrush}" Visibility="{Binding DotVisibility}"/>
+                                <Border CornerRadius="1.5" Width="{Binding DotW}" Height="{Binding DotH}" HorizontalAlignment="{Binding DotHAlign}" VerticalAlignment="{Binding DotVAlign}"
+                                        Margin="{Binding DotMargin}" Background="{Binding DotBrush}" Visibility="{Binding DotVisibility}"/>
                                 <!-- Downloading something right now -->
                                 <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="2,2,0,0" Width="15" Height="15" CornerRadius="7.5"
                                         Background="#FF3B82F6" BorderBrush="{DynamicResource Brim.Surface}" BorderThickness="1.5"
@@ -69,7 +69,7 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <Border Width="1" Margin="6,10" Background="{DynamicResource Brim.Stroke}"/>
+            <Border x:Name="Sep" Width="1" Margin="6,10" Background="{DynamicResource Brim.Stroke}"/>
 
             <Button x:Name="TaskMgrBtn" Style="{StaticResource Tile}" Width="30" Click="TaskMgr_Click" ToolTip="Task Manager" Visibility="Collapsed">
                 <TextBlock Text="&#xE9D9;" FontFamily="{StaticResource Brim.Icons}" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -81,14 +81,14 @@
                 <TextBlock Text="&#xE70E;" FontFamily="{StaticResource Brim.Icons}" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Button>
             <Button x:Name="WeatherBtn" Style="{StaticResource Tile}" Click="Weather_Click" Visibility="Collapsed">
-                <StackPanel Orientation="Horizontal" Margin="10,0" VerticalAlignment="Center">
+                <StackPanel x:Name="WeatherStack" Orientation="Horizontal" Margin="10,0" VerticalAlignment="Center">
                     <TextBlock x:Name="WeatherGlyph" FontFamily="{StaticResource Brim.Symbols}" FontSize="15" VerticalAlignment="Center"/>
                     <TextBlock x:Name="WeatherTemp" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="6,0,0,0"/>
                 </StackPanel>
             </Button>
             <Button x:Name="StatusBtn" Style="{StaticResource Tile}" Click="Status_Click" ToolTip="Wi-Fi, Bluetooth, sound and brightness"
                     PreviewMouseWheel="Status_Wheel" MouseUp="Status_MiddleClick">
-                <StackPanel Orientation="Horizontal" Margin="10,0" VerticalAlignment="Center">
+                <StackPanel x:Name="StatusStack" Orientation="Horizontal" Margin="10,0" VerticalAlignment="Center">
                     <TextBlock x:Name="NetGlyph" Text="&#xE701;" FontFamily="{StaticResource Brim.Icons}" FontSize="14" VerticalAlignment="Center"/>
                     <TextBlock x:Name="VolGlyph" Text="&#xE767;" FontFamily="{StaticResource Brim.Icons}" FontSize="14" VerticalAlignment="Center" Margin="10,0,0,0"/>
                     <!-- The level for a moment while you scroll on it -->
@@ -97,19 +97,19 @@
                 </StackPanel>
             </Button>
             <Button x:Name="LangBtn" Style="{StaticResource Tile}" Click="Lang_Click" MouseRightButtonUp="Lang_RightClick" Padding="0" Visibility="Collapsed">
-                <StackPanel VerticalAlignment="Center" Margin="8,0">
+                <StackPanel x:Name="LangStack" VerticalAlignment="Center" Margin="8,0">
                     <TextBlock x:Name="LangText" FontSize="11.5" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                     <TextBlock x:Name="LangRegion" FontSize="9.5" Foreground="{DynamicResource Brim.Dim}" HorizontalAlignment="Center" Visibility="Collapsed"/>
                 </StackPanel>
             </Button>
             <Button x:Name="ClockBtn" Style="{StaticResource Tile}" Click="Clock_Click" ToolTip="Notifications and calendar" Padding="0">
-                <StackPanel VerticalAlignment="Center" Margin="10,0">
+                <StackPanel x:Name="ClockStack" VerticalAlignment="Center" Margin="10,0">
                     <TextBlock x:Name="TimeText" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Right"/>
                     <TextBlock x:Name="DateText" FontSize="10.5" Foreground="{DynamicResource Brim.Dim}" HorizontalAlignment="Right"/>
                 </StackPanel>
             </Button>
             <Button x:Name="DesktopBtn" Style="{StaticResource Tile}" Width="16" ClickMode="Press" Margin="4,0,-2,0" Click="Desktop_Click" ToolTip="Show desktop (click again to go back)">
-                <Border Width="2" Height="20" CornerRadius="1" Background="{DynamicResource Brim.Dim}" Opacity="0.6"
+                <Border x:Name="DesktopLine" Width="2" Height="20" CornerRadius="1" Background="{DynamicResource Brim.Dim}" Opacity="0.6"
                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Button>
         </StackPanel>

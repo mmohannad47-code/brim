@@ -48,7 +48,7 @@ public static class Lyrics
     public static void Check()
     {
         var m = MediaService.Instance;
-        var key = SettingsStore.Current.Lyrics && m.HasSession && m.Title.Length > 0 ? m.Title + "\u0001" + m.Artist : "";
+        var key = Online.Lyrics && m.HasSession && m.Title.Length > 0 ? m.Title + "\u0001" + m.Artist : "";
         if (key == trackKey) return;
         trackKey = key;
         if (Lines != null) { Lines = null; Changed?.Invoke(); }

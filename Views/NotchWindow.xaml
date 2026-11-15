@@ -164,7 +164,7 @@
                                     </Grid>
 
                                     <!-- The glance column: its parts are shown, hidden and ordered from Settings › Notch › Home tab -->
-                                    <ScrollViewer x:Name="GlanceScroll" Grid.Column="2" VerticalScrollBarVisibility="Hidden">
+                                    <ScrollViewer x:Name="GlanceScroll" Grid.Column="2" VerticalScrollBarVisibility="Hidden" PreviewMouseWheel="Glance_Wheel" ScrollChanged="Glance_ScrollChanged">
                                     <WrapPanel x:Name="Glance" Orientation="Horizontal">
                                         <StackPanel x:Name="DateBlock">
                                             <Grid x:Name="DayRow">
@@ -222,6 +222,9 @@
                                         </Border>
                                     </WrapPanel>
                                     </ScrollViewer>
+                                    <!-- Pages of the glance column: scroll or swipe through them -->
+                                    <StackPanel x:Name="GlanceDots" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-14,0"
+                                                IsHitTestVisible="False" Visibility="Collapsed"/>
                                 </Grid>
 
                                 <!-- SHORTCUTS -->

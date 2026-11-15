@@ -495,6 +495,7 @@ public static class WeatherService
 
     public static async Task<(double lat, double lon, string name)?> Geocode(string city)
     {
+        if (!Online.Weather) return null;
         try
         {
             var json = await http.GetStringAsync($"https://geocoding-api.open-meteo.com/v1/search?count=1&name={Uri.EscapeDataString(city)}");
@@ -511,6 +512,7 @@ public static class WeatherService
     /// <summary>Find a city with its time zone (for the world clock).</summary>
     public static async Task<CityItem?> FindCity(string query)
     {
+        if (!Online.Weather) return null;
         try
         {
             var json = await http.GetStringAsync($"https://geocoding-api.open-meteo.com/v1/search?count=1&name={Uri.EscapeDataString(query)}");
@@ -566,6 +568,7 @@ public static class WeatherService
     /// <summary>Current weather for one city, fetched at most every 20 minutes.</summary>
     public static async Task<CityNow?> ForCity(CityItem city)
     {
+        if (!Online.Weather) return null;
         var key = $"{city.Lat:0.###},{city.Lon:0.###},{SettingsStore.Current.Fahrenheit}";
         cityCache.TryGetValue(key, out var hit);
         if (hit != null && DateTime.Now - hit.Fetched < TimeSpan.FromMinutes(20)) return hit;
@@ -589,7 +592,7 @@ public static class WeatherService
     public static async void Refresh(bool force = false)
     {
         var s = SettingsStore.Current;
-        if (s.WeatherLat == null || s.WeatherLon == null) { Current = null; Updated?.Invoke(); return; }
+        if (s.WeatherLat == null || s.WeatherLon == null || !Online.Weather) { Current = null; Updated?.Invoke(); return; }
         if (!force && DateTime.Now - lastFetch < TimeSpan.FromMinutes(20) && Current != null) return;
         lastFetch = DateTime.Now;
         try

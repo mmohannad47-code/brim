@@ -169,6 +169,7 @@ public partial class NotchWindow : Window
             hwnd = new WindowInteropHelper(this).Handle;
             Native.MakeToolWindow(hwnd, true);
             ApplyCapture();
+            HwndSource.FromHwnd(hwnd).AddHook(GlanceHook);
         };
         Body.LayoutUpdated += (_, _) => SyncBackdrop();
         // Leaving the clipboard search (click elsewhere or Esc) gives the notch back its usual behaviour
@@ -497,6 +498,9 @@ public partial class NotchWindow : Window
         MusicArea.Visibility = music ? Visibility.Visible : Visibility.Collapsed;
         Grid.SetColumn(GlanceScroll, music ? 2 : 0);
         Grid.SetColumnSpan(GlanceScroll, music ? 1 : 3);
+        Grid.SetColumn(GlanceDots, music ? 2 : 0);
+        Grid.SetColumnSpan(GlanceDots, music ? 1 : 3);
+        glancePage = 0;
 
         bool date = items.Contains("Date"), devices = items.Contains("Devices");
         DayText.Visibility = date ? Visibility.Visible : Visibility.Collapsed;
@@ -527,6 +531,137 @@ public partial class NotchWindow : Window
             index++;
         }
         if (mode == Mode.Open) RefreshOpen();
+        // As many parts as you like: they're shared out into pages once they're laid out
+        Dispatcher.BeginInvoke(new Action(BuildGlancePages), DispatcherPriority.Loaded);
+    }
+
+    // ---------- the Home tab's glance column: as many parts as you like, a page at a time.
+    // Scroll on it (or swipe sideways on a touchpad) to go through the pages; dots on its edge show which one you're on.
+
+    /// <summary>For `--snapshot`: the next page of the glance column.</summary>
+    internal void DebugPageGlance() => PageGlance(1);
+
+    // Pages of whole parts: a part is never cut in half at the bottom; the next page slides in
+    List<List<FrameworkElement>> glancePages = new();
+    int glancePage;
+    double wheelSum;
+    DateTime lastWheelAt;
+    bool gestureUsed;
+
+    /// <summary>Share the parts out into pages that each fit the column (two side by side when there's no music).</summary>
+    void BuildGlancePages()
+    {
+        var parts = Glance.Children.OfType<FrameworkElement>().ToList();
+        foreach (var p in parts) p.Visibility = Visibility.Visible;
+        double view = GlanceScroll.ActualHeight;
+        if (view <= 0 || parts.Count == 0) { glancePages = new() { parts }; glancePage = 0; UpdateGlanceDots(1); return; }
+        Glance.UpdateLayout();
+        int perRow = MusicArea.Visibility == Visibility.Visible ? 1 : 2;
+        var pages = new List<List<FrameworkElement>>();
+        var current = new List<FrameworkElement>();
+        double used = 0;
+        foreach (var row in parts.Chunk(perRow))
+        {
+            // The first row on a page has no gap above it
+            double first = row.Max(p => p.ActualHeight + ((Thickness)p.Tag).Bottom);
+            double later = row.Max(p => p.ActualHeight + ((Thickness)p.Tag).Top + ((Thickness)p.Tag).Bottom);
+            if (current.Count > 0 && used + later > view + 0.5) { pages.Add(current); current = new(); used = 0; }
+            used += current.Count == 0 ? first : later;
+            current.AddRange(row);
+        }
+        if (current.Count > 0) pages.Add(current);
+        glancePages = pages;
+        glancePage = Math.Min(glancePage, pages.Count - 1);
+        ShowGlancePage(0);
+    }
+
+    void ShowGlancePage(int dir)
+    {
+        if (glancePages.Count == 0) return;
+        var page = glancePages[glancePage];
+        bool music = MusicArea.Visibility == Visibility.Visible;
+        int perRow = music ? 1 : 2, i = 0;
+        foreach (var p in Glance.Children.OfType<FrameworkElement>())
+        {
+            int at = page.IndexOf(p);
+            p.Visibility = at >= 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (at < 0) continue;
+            var m = (Thickness)p.Tag;
+            p.Margin = new Thickness(0, at < perRow ? 0 : m.Top, !music && i % 2 == 0 ? 30 : 0, m.Bottom);
+            i++;
+        }
+        UpdateGlanceDots(glancePages.Count);
+        if (dir == 0) return;
+        // The new page slides in from the way you scrolled
+        var t = new TranslateTransform();
+        Glance.RenderTransform = t;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        t.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(dir * 26, 0, TimeSpan.FromMilliseconds(240)) { EasingFunction = ease });
+        Glance.BeginAnimation(OpacityProperty, new DoubleAnimation(0.2, 1, TimeSpan.FromMilliseconds(240)) { EasingFunction = ease });
+    }
+
+    void Glance_Wheel(object sender, MouseWheelEventArgs e)
+    {
+        if (glancePages.Count < 2) return; // nothing more to see: leave the wheel alone
+        e.Handled = true;
+        GlanceGesture(-e.Delta);
+    }
+
+    /// <summary>One page per flick: a touchpad sends many small steps for one swipe, a mouse wheel one per notch.</summary>
+    void GlanceGesture(int delta)
+    {
+        var now = DateTime.Now;
+        bool sameGesture = now - lastWheelAt < TimeSpan.FromMilliseconds(180);
+        lastWheelAt = now;
+        if (!sameGesture) { wheelSum = 0; gestureUsed = false; }
+        if (gestureUsed) return;
+        wheelSum += delta;
+        if (Math.Abs(wheelSum) < 100) return;
+        gestureUsed = true;
+        PageGlance(wheelSum > 0 ? 1 : -1);
+    }
+
+    void PageGlance(int dir)
+    {
+        if (glancePages.Count < 2) return;
+        int to = Math.Clamp(glancePage + dir, 0, glancePages.Count - 1);
+        if (to == glancePage) return;
+        glancePage = to;
+        ShowGlancePage(dir);
+    }
+
+    void Glance_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        // The column changed size (the notch opened, or the music part came or went): share the parts out again
+        if (e.ViewportHeightChange != 0) Dispatcher.BeginInvoke(new Action(BuildGlancePages), DispatcherPriority.Loaded);
+    }
+
+    void UpdateGlanceDots(int count)
+    {
+        GlanceDots.Visibility = count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        if (GlanceDots.Children.Count != count)
+        {
+            GlanceDots.Children.Clear();
+            for (int i = 0; i < count; i++)
+                GlanceDots.Children.Add(new System.Windows.Shapes.Ellipse { Width = 5, Height = 5, Margin = new Thickness(0, 2.5, 0, 2.5) });
+        }
+        for (int i = 0; i < GlanceDots.Children.Count; i++)
+        {
+            var dot = (System.Windows.Shapes.Ellipse)GlanceDots.Children[i];
+            dot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, i == glancePage ? "Brim.Text" : "Brim.Dim");
+            dot.Opacity = i == glancePage ? 0.9 : 0.45;
+        }
+    }
+
+    /// <summary>A sideways swipe on a touchpad (Windows sends it as a horizontal wheel): the next or previous page.</summary>
+    IntPtr GlanceHook(IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled)
+    {
+        if (msg == 0x020E /* WM_MOUSEHWHEEL */ && mode == Mode.Open && TabHome.IsChecked == true && GlanceScroll.IsMouseOver)
+        {
+            GlanceGesture((short)((w.ToInt64() >> 16) & 0xFFFF));
+            handled = true;
+        }
+        return IntPtr.Zero;
     }
 
     void MessageBlock_Click(object sender, MouseButtonEventArgs e)
@@ -538,6 +673,9 @@ public partial class NotchWindow : Window
     internal void DebugPeek() { Collapse(animate: false); Peek(); }
 
     public bool IsOpen => mode == Mode.Open;
+
+    /// <summary>Lyrics in the notch: lyrics on, and not switched off for the notch (the music widget can still show them).</summary>
+    static bool NotchLyrics => SettingsStore.Current.Lyrics && SettingsStore.Current.NotchLyrics;
 
     public void ToggleOpen()
     {
@@ -595,7 +733,7 @@ public partial class NotchWindow : Window
     {
         bool island = S.Shape == NotchShape.Island;
         double h = island ? 34 : 32;
-        if (SongActive) return new Size(S.Lyrics && Lyrics.Lines != null ? lyricWidth : 300, h);
+        if (SongActive) return new Size(NotchLyrics && Lyrics.Lines != null ? lyricWidth : 300, h);
         if (S.Face == RestingFace.Nothing) return new Size(island ? 120 : 180, h);
         return new Size(island ? 150 : 190, h);
     }
@@ -923,7 +1061,7 @@ public partial class NotchWindow : Window
     }
 
     /// <summary>What the closed notch says while music plays: the current lyric when lyrics are on, else the title.</summary>
-    string SongFace() => S.Lyrics && Lyrics.LineAt(M.Position) is { } line ? line : M.Title;
+    string SongFace() => NotchLyrics && Lyrics.LineAt(M.Position) is { } line ? line : M.Title;
 
     // ------------------------------------------------------------------ lyrics
 
@@ -952,12 +1090,12 @@ public partial class NotchWindow : Window
 
     /// <summary>A lyric too long even for the widest notch gets a slightly smaller font before it's cut short.</summary>
     double FaceSizeFor(string text) =>
-        S.Lyrics && Lyrics.Lines != null && TextWidth(text, 12) + ClosedChrome > lyricWidth ? 11 : 12;
+        NotchLyrics && Lyrics.Lines != null && TextWidth(text, 12) + ClosedChrome > lyricWidth ? 11 : 12;
 
     /// <summary>Show the line being sung: in the closed notch (fading in) and under the song in the open one.</summary>
     void ShowLyric(bool force)
     {
-        var lines = S.Lyrics ? Lyrics.Lines : null;
+        var lines = NotchLyrics ? Lyrics.Lines : null;
         int now = lines == null ? int.MinValue : Lyrics.IndexAt(lines, M.Position);
         if (!force && now == shownLyric) return;
         bool changed = now != shownLyric;

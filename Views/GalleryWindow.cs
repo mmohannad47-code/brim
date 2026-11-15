@@ -339,7 +339,7 @@ public sealed class GalleryWindow : Window
                 "OLED" => "Mostly true-black pictures from wallhaven.cc: black pixels on OLED are switched off, so they look deep and save power.",
                 _ => "Pictures from wallhaven.cc. Click one to download it and set it as your wallpaper.",
             });
-            if (grid.Children.Count == 0) Status("Nothing found. Try another word.");
+            if (grid.Children.Count == 0) Status(Online.Wallpapers ? "Nothing found. Try another word." : "Online wallpapers are off (Settings › General › Online). Your own pictures and videos still work.");
         }
         catch (UnauthorizedAccessException)
         {

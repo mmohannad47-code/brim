@@ -117,6 +117,13 @@ public class AppSettings
     public bool SongPopup { get; set; } = true;
     /// <summary>Synced lyrics (LRCLIB) in the closed notch and the player</summary>
     public bool Lyrics { get; set; } = true;
+    /// <summary>Show the lyrics in the notch (off: only the music widget shows them)</summary>
+    public bool NotchLyrics { get; set; } = true;
+    /// <summary>Brim may use the internet for its extras (weather, lyrics, covers, logos, wallpapers, updates)</summary>
+    public bool UseInternet { get; set; } = true;
+    public bool OnlineWeather { get; set; } = true;
+    public bool OnlineIcons { get; set; } = true;
+    public bool OnlineWallpapers { get; set; } = true;
     /// <summary>Pop the notch out for volume, charging, headphones, mic and timer changes</summary>
     public bool LiveActivities { get; set; } = true;
     public bool HideUntilHover { get; set; }
@@ -231,6 +238,8 @@ public class AppSettings
     public bool DockTaskManager { get; set; }
     /// <summary>A settings button on the dock (Windows Settings or Brim's)</summary>
     public bool DockSettingsButton { get; set; } = true;
+    /// <summary>Which edge of the screen the dock sits on: Bottom, Left or Right</summary>
+    public string DockSide { get; set; } = "Bottom";
     /// <summary>The dock's icons stay where they are (no dragging them into a new order)</summary>
     public bool DockLocked { get; set; }
     /// <summary>Brim's keyboard shortcuts as you changed them (anything not here has its usual keys)</summary>

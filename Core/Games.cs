@@ -1059,7 +1059,7 @@ public static class GameLibrary
     {
         if (covers.TryGetValue(g.Key, out var hit)) return hit;
         string? path = await Task.Run(() => LocalCover(g));
-        if (path == null && S.GameCovers) path = await DownloadCover(g);
+        if (path == null && Online.Covers) path = await DownloadCover(g);
         ImageSource? img = null;
         if (path != null)
         {

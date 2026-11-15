@@ -187,8 +187,20 @@ public static class Snapshot
         notch.DebugOpen("Home");
         await Task.Delay(900);
         Save(notch, Path.Combine(folder, "notch-custom-home.png"));
+        // Every part of the Home tab on: a page at a time, then the next page
+        s.HomeItems = NotchCatalog.Home.Select(h => h.id).ToList();
+        s.NotchTabs = tabs;
+        notch.ApplySettings();
+        notch.Left = -4000;
+        notch.DebugOpen("Home");
+        await Task.Delay(900);
+        Save(notch, Path.Combine(folder, "notch-home-all.png"));
+        notch.DebugPageGlance();
+        await Task.Delay(600);
+        Save(notch, Path.Combine(folder, "notch-home-all-2.png"));
         s.HomeItems = homeItems;
         s.NotchTabs = tabs;
+        notch.ApplySettings();
 
         // Themes
         var theme = s.Theme;
@@ -287,6 +299,18 @@ public static class Snapshot
         await Task.Delay(600);
         dock.Left = -4000;
         Save(dock, Path.Combine(folder, "dock-docked.png"));
+        // Down the left side, floating and as a full-length bar
+        s.DockSide = "Left";
+        dock.ApplySettings();
+        await Task.Delay(700);
+        dock.Left = -4000;
+        Save(dock, Path.Combine(folder, "dock-left.png"));
+        File.WriteAllText(Path.Combine(folder, "dock-left.txt"), dock.DebugState);
+        dock.DebugDocked();
+        await Task.Delay(600);
+        dock.Left = -4000;
+        Save(dock, Path.Combine(folder, "dock-left-docked.png"));
+        s.DockSide = "Bottom";
         dock.Close();
 
         foreach (var sc in Scenes.All)

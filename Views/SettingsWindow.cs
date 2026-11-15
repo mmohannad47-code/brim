@@ -144,8 +144,10 @@ public sealed class SettingsWindow : Window
                 Switch(S.LiveActivities, v => { S.LiveActivities = v; Commit(); })),
             ScreenRow("Screen", S.NotchScreen, v => { S.NotchScreen = v; Commit(); }, everyScreen: true),
             Row("Song in the closed notch", "Cover, title and live bars while music plays", Switch(S.ShowSongWhenClosed, v => { S.ShowSongWhenClosed = v; Commit(); })),
-            Row("Lyrics", "The line being sung, in the closed notch and under the song, for songs with synced lyrics (from LRCLIB)",
-                Switch(S.Lyrics, v => { S.Lyrics = v; Commit(); Lyrics.Check(); })),
+            Row("Lyrics in the notch", Online.Lyrics
+                    ? "The line being sung, in the closed notch and under the song. Off: only the music widget shows them"
+                    : "Lyrics are off in Settings › General › Online",
+                Switch(S.NotchLyrics, v => { S.NotchLyrics = v; Commit(); })),
             Row("Pop out on new song", "Shows the next track for a few seconds", Switch(S.SongPopup, v => { S.SongPopup = v; Commit(); }))
         );
 
@@ -167,7 +169,7 @@ public sealed class SettingsWindow : Window
         Card(OrderRows(S.NotchTabs, NotchCatalog.Tabs.Select(t => (t.id, t.name, (string?)t.glyph)).ToArray(), minimum: 1));
 
         Section("Home tab");
-        page.Children.Add(Spaced(Dim("What Home shows. Turn off \"Now playing\" to give the rest the whole width."), 0));
+        page.Children.Add(Spaced(Dim("What Home shows: switch on as many as you like. More than fit go onto pages: scroll (or swipe sideways) on them in the notch. Turn off \"Now playing\" to give the rest the whole width."), 0));
         page.Children.Add(Spaced(new Border(), 8));
         Card(OrderRows(S.HomeItems, NotchCatalog.Home.Select(h => (h.id, h.name, (string?)null)).ToArray(), minimum: 0));
 
@@ -1606,9 +1608,16 @@ public sealed class SettingsWindow : Window
         {
             Section("Dock placement");
             Card(
-                Row("Position", "Along the bottom of the screen", Chips(new[] { "Left", "Center", "Right" }, S.DockPosition, v => { S.DockPosition = v; Commit(); })),
+                Row("Edge of the screen", "Along the bottom like Windows' taskbar, or down the left or right side (everything works the same there)",
+                    Chips(new[] { "Bottom", "Left", "Right" }, S.DockSide, v => { S.DockSide = v; Commit(); Rebuild(); })),
+                // On a side, the three spots read top, middle and bottom (stored as Left, Center, Right)
+                S.DockSide is "Left" or "Right"
+                    ? Row("Position", "Down the side of the screen", Chips(new[] { "Top", "Middle", "Bottom" },
+                        S.DockPosition switch { "Left" => "Top", "Right" => "Bottom", _ => "Middle" },
+                        v => { S.DockPosition = v switch { "Top" => "Left", "Bottom" => "Right", _ => "Center" }; Commit(); }))
+                    : Row("Position", "Along the bottom of the screen", Chips(new[] { "Left", "Center", "Right" }, S.DockPosition, v => { S.DockPosition = v; Commit(); })),
                 ScreenRow("Screen", S.DockScreen, v => { S.DockScreen = v; Commit(); }, everyScreen: true),
-                Row("Hide until I point at the bottom edge", null, Switch(S.DockAutoHide, v => { S.DockAutoHide = v; Commit(); Rebuild(); })),
+                Row("Hide until I point at the edge", "The dock slides away and comes back when you point at its edge of the screen", Switch(S.DockAutoHide, v => { S.DockAutoHide = v; Commit(); Rebuild(); })),
                 S.DockAutoHide ? null : Row("Keep windows above the dock", "Maximised windows stop where the dock begins", Switch(S.DockReserve, v => { S.DockReserve = v; Commit(); Rebuild(); })),
                 S.DockAutoHide || !S.DockReserve ? null : Row("With a maximised window",
                     "Full-width bar: the dock stretches into a solid bar, so no wallpaper shows beside the window. Floating: it stays a pill with your wallpaper either side.",
@@ -1800,6 +1809,30 @@ public sealed class SettingsWindow : Window
                     }))
         );
 
+        // What Brim may fetch from the internet: all of it is extras, and everything else works without it
+        Section("Online");
+        void Service(List<UIElement?> rows, string name, string what, bool value, Action<bool> set)
+        {
+            var sw = Switch(value, v => { set(v); Commit(); Lyrics.Check(); Rebuild(); });
+            sw.IsEnabled = S.UseInternet;
+            var row = Row(name, what, sw);
+            row.Opacity = S.UseInternet ? 1 : 0.5;
+            rows.Add(row);
+        }
+        var online = new List<UIElement?>
+        {
+            Row("Use the internet for extras", S.UseInternet
+                    ? "Weather, lyrics, game covers, website logos, wallpapers and updates. Brim sends no personal details: a city for the weather, a song for its lyrics, a game's name for its cover"
+                    : "Off: Brim doesn't go online at all. Everything else keeps working",
+                Switch(S.UseInternet, v => { S.UseInternet = v; Commit(); Lyrics.Check(); Rebuild(); })),
+        };
+        Service(online, "Weather", "Open-Meteo, for the city in Widgets › Weather", S.OnlineWeather, v => S.OnlineWeather = v);
+        Service(online, "Lyrics", "LRCLIB, for the song playing", S.Lyrics, v => S.Lyrics = v);
+        Service(online, "Game covers", "Steam and SteamGridDB, for games without a cover of their own", S.GameCovers, v => S.GameCovers = v);
+        Service(online, "Website logos", "Each site's own logo, for shortcuts to websites", S.OnlineIcons, v => S.OnlineIcons = v);
+        Service(online, "Online wallpapers", "Pixabay and Wallhaven, in the Wallpapers window (your own pictures and videos always work)", S.OnlineWallpapers, v => S.OnlineWallpapers = v);
+        Card(online.ToArray());
+
         Section("Updates");
         string status = Updater.Now switch
         {
@@ -1811,7 +1844,7 @@ public sealed class SettingsWindow : Window
             _ => Installer.RunningInstalled ? "Brim checks a little after it starts, then every few hours" : "Only the installed Brim updates itself",
         };
         Card(
-            Row("Get updates automatically", "Downloads new versions in the background",
+            Row("Get updates automatically", S.UseInternet ? "Downloads new versions in the background" : "Paused: the internet is off for Brim (Online, above)",
                 Switch(S.CheckUpdates, v => { S.CheckUpdates = v; Commit(); Rebuild(); })),
             S.CheckUpdates
                 ? Row("Install updates by themselves", "Brim restarts into the new version when you've been away from the PC for a few minutes, never during a game or video. Off: it asks first",

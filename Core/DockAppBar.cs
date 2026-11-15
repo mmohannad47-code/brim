@@ -46,8 +46,9 @@ static class DockAppBar
         }
     }
 
-    /// <summary>Register (if needed) and reserve <paramref name="px"/> pixels at the bottom of the monitor.</summary>
-    public static string Reserve(IntPtr hwnd, int px, bool direct, uint callback = 0, Native.RECT? monitor = null, bool alreadyRegistered = false)
+    /// <summary>Register (if needed) and reserve <paramref name="px"/> pixels along one edge of the monitor (the bottom, or a side).</summary>
+    public static string Reserve(IntPtr hwnd, int px, bool direct, uint callback = 0, Native.RECT? monitor = null, bool alreadyRegistered = false,
+                                 uint edge = Native.ABE_BOTTOM)
     {
         return WithExplorer(direct, () =>
         {
@@ -55,10 +56,18 @@ static class DockAppBar
             var abd = new Native.APPBARDATA { cbSize = Marshal.SizeOf<Native.APPBARDATA>(), hWnd = hwnd, uCallbackMessage = callback };
             string log = "";
             if (!alreadyRegistered) log += "new=" + Native.SHAppBarMessage(Native.ABM_NEW, ref abd).ToUInt32() + " ";
-            abd.uEdge = Native.ABE_BOTTOM;
-            abd.rc = new Native.RECT { Left = mon.Left, Right = mon.Right, Top = mon.Bottom - px, Bottom = mon.Bottom };
+            abd.uEdge = edge;
+            abd.rc = edge switch
+            {
+                Native.ABE_LEFT => new Native.RECT { Left = mon.Left, Right = mon.Left + px, Top = mon.Top, Bottom = mon.Bottom },
+                Native.ABE_RIGHT => new Native.RECT { Left = mon.Right - px, Right = mon.Right, Top = mon.Top, Bottom = mon.Bottom },
+                _ => new Native.RECT { Left = mon.Left, Right = mon.Right, Top = mon.Bottom - px, Bottom = mon.Bottom },
+            };
             Native.SHAppBarMessage(Native.ABM_QUERYPOS, ref abd);
-            abd.rc.Top = abd.rc.Bottom - px;
+            // Windows may move it inwards (another bar on that edge): keep the size we asked for from there
+            if (edge == Native.ABE_LEFT) abd.rc.Right = abd.rc.Left + px;
+            else if (edge == Native.ABE_RIGHT) abd.rc.Left = abd.rc.Right - px;
+            else abd.rc.Top = abd.rc.Bottom - px;
             Native.SHAppBarMessage(Native.ABM_SETPOS, ref abd);
             return log + $"setpos rect {abd.rc.Left},{abd.rc.Top},{abd.rc.Right},{abd.rc.Bottom}";
         });

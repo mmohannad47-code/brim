@@ -1263,6 +1263,7 @@ public partial class App : Application
     /// <summary>Hide the notch and dock on each screen a game or video covers (the other screens keep theirs).</summary>
     void ApplyFullscreen()
     {
+        if (Native.SwitcherInFront()) return; // (see React)
         var covered = WindowTracker.FullscreenMonitors(out var why);
         // What decided each screen, when a screen goes fullscreen or stops being it (to see why a notch showed
         // over a game); not on every switch between ordinary apps
@@ -1379,14 +1380,26 @@ public partial class App : Application
 
     void React()
     {
+        // Alt+Tab, Task View or a swipe in progress: hold everything still until it's done (Brim used to slide the
+        // notch and dock out and back under Windows' own animation, which made gestures stutter)
+        if (Native.SwitcherInFront()) return;
         reacts++;
+        var started = System.Diagnostics.Stopwatch.StartNew();
         LivePolicy.ApplyToWallpaperEngine();
         CheckAppInFront();
         ApplyFullscreen();
         TaskbarManager.Enforce();
         foreach (var d in AllDocks) d.RefreshApps();
         widgets.CheckDesktop();
+        // A reaction should take a few ms; note the slow ones (a frame is 16 ms)
+        if (started.ElapsedMilliseconds > 40 && DateTime.Now - slowNotedAt > TimeSpan.FromMinutes(1))
+        {
+            slowNotedAt = DateTime.Now;
+            Log.Note("activity", $"reacting to a window change took {started.ElapsedMilliseconds} ms");
+        }
     }
+
+    DateTime slowNotedAt;
 
     void ShellTick()
     {

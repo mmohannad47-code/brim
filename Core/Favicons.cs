@@ -47,6 +47,7 @@ public static class Favicons
     /// <summary>Fetch the site's logo (once per site, however many shortcuts ask).</summary>
     public static Task<ImageSource?> GetAsync(string url)
     {
+        if (!Online.Icons) return Task.FromResult(Cached(url)); // (logos already saved still show)
         var host = Host(url);
         if (host == null) return Task.FromResult<ImageSource?>(null);
         if (Cached(url) is { } have) return Task.FromResult<ImageSource?>(have);

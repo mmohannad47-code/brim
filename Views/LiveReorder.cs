@@ -31,6 +31,16 @@ sealed class LiveReorder
 
     public bool Active => item != null;
 
+    /// <summary>A column instead of a row (the dock on the side of the screen): everything runs along Y, and the lift is sideways.</summary>
+    public bool Vertical { get; set; }
+
+    double Along(Point p) => Vertical ? p.Y : p.X;
+    double Start(FrameworkElement el) => Vertical ? Slot(el).Y : Slot(el).X;
+    double Length(FrameworkElement el) => Vertical ? Slot(el).Height : Slot(el).Width;
+    DependencyProperty AlongProp => Vertical ? TranslateTransform.YProperty : TranslateTransform.XProperty;
+    DependencyProperty AcrossProp => Vertical ? TranslateTransform.XProperty : TranslateTransform.YProperty;
+    double MovedAlong(TranslateTransform t) => Vertical ? t.Y : t.X;
+
     static readonly IEasingFunction Ease = new CubicEase { EasingMode = EasingMode.EaseOut };
     static readonly ConditionalWeakTable<FrameworkElement, Parts> parts = new();
     sealed record Parts(TransformGroup Group, ScaleTransform Scale, TranslateTransform Move);
@@ -89,12 +99,12 @@ sealed class LiveReorder
         if (Active || !include(el)) return;
         item = el;
         startIndex = Items.IndexOf(el);
-        grab = pointer.X - Slot(el).X;
+        grab = Along(pointer) - Start(el);
         var p = PartsOf(el);
         Panel.SetZIndex(el, 100);
         Animate(p.Scale, ScaleTransform.ScaleXProperty, liftScale, 160);
         Animate(p.Scale, ScaleTransform.ScaleYProperty, liftScale, 160);
-        Animate(p.Move, TranslateTransform.YProperty, lift, 160);
+        Animate(p.Move, AcrossProp, Vertical ? 0 : lift, 160);
         el.Effect = new DropShadowEffect { BlurRadius = 16, ShadowDepth = 4, Direction = 270, Opacity = 0.55, Color = Colors.Black };
         el.Opacity = 0.96;
         panel.CaptureMouse();
@@ -108,12 +118,12 @@ sealed class LiveReorder
         int from = items.IndexOf(item);
         if (from < 0) { End(); return; }
         // Where the carried item's middle is now, against the middles of the others
-        double centre = pointer.X - grab + Slot(item).Width / 2;
-        int to = items.Where(o => o != item).Count(o => Slot(o).X + Slot(o).Width / 2 < centre);
+        double centre = Along(pointer) - grab + Length(item) / 2;
+        int to = items.Where(o => o != item).Count(o => Start(o) + Length(o) / 2 < centre);
         if (to != from)
         {
             // Remember where everything is on screen, move, then slide each one from there to its new place
-            var before = items.ToDictionary(o => o, o => Slot(o).X + PartsOf(o).Move.X);
+            var before = items.ToDictionary(o => o, o => Start(o) + MovedAlong(PartsOf(o).Move));
             if (move != null) move(item, from, to);
             else
             {
@@ -128,14 +138,14 @@ sealed class LiveReorder
             foreach (var o in now)
             {
                 if (o == item || !before.TryGetValue(o, out var was)) continue;
-                double start = was - Slot(o).X;
-                if (Math.Abs(start) > 0.5) Animate(PartsOf(o).Move, TranslateTransform.XProperty, 0, 200, start);
+                double start = was - Start(o);
+                if (Math.Abs(start) > 0.5) Animate(PartsOf(o).Move, AlongProp, 0, 200, start);
             }
         }
         // The carried item sits under the pointer
         var t = PartsOf(item).Move;
-        t.BeginAnimation(TranslateTransform.XProperty, null);
-        t.X = pointer.X - grab - Slot(item).X;
+        t.BeginAnimation(AlongProp, null);
+        t.SetValue(AlongProp, Along(pointer) - grab - Start(item));
     }
 
     /// <summary>Dev check: where an item's transforms are now.</summary>
@@ -152,8 +162,8 @@ sealed class LiveReorder
         bool changed = Items.IndexOf(el) != startIndex;
         // Settle into place
         var p = PartsOf(el);
-        Animate(p.Move, TranslateTransform.XProperty, 0, 220, p.Move.X);
-        Animate(p.Move, TranslateTransform.YProperty, 0, 220);
+        Animate(p.Move, AlongProp, 0, 220, MovedAlong(p.Move));
+        Animate(p.Move, AcrossProp, 0, 220);
         Animate(p.Scale, ScaleTransform.ScaleXProperty, 1, 220);
         var settle = new DoubleAnimation(1, TimeSpan.FromMilliseconds(220)) { EasingFunction = Ease };
         settle.Completed += (_, _) => { if (item != el) { el.Effect = null; Panel.SetZIndex(el, 0); } };

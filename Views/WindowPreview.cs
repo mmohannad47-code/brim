@@ -99,8 +99,8 @@ public sealed class WindowPreview : Window
             stack.Children.Add(slot);
 
             card.Child = stack;
-            card.MouseEnter += (_, _) => card.SetResourceReference(Border.BackgroundProperty, "Brim.Hover");
-            card.MouseLeave += (_, _) => card.Background = Brushes.Transparent;
+            card.MouseEnter += (_, _) => { card.SetResourceReference(Border.BackgroundProperty, "Brim.Hover"); PeekSoon(win.Hwnd); };
+            card.MouseLeave += (_, _) => { card.Background = Brushes.Transparent; EndPeek(); };
             card.MouseLeftButtonUp += (_, e) =>
             {
                 if (e.OriginalSource is DependencyObject d && IsInside(d, close)) return;
@@ -124,9 +124,53 @@ public sealed class WindowPreview : Window
         MouseEnter += (_, _) => hideTimer.Stop();
         Closed += (_, _) =>
         {
+            EndPeek();
             foreach (var (_, _, t) in items) if (t != IntPtr.Zero) DwmUnregisterThumbnail(t);
             if (current == this) current = null;
         };
+    }
+
+    // ---------- peek: point at a preview for a moment and every other window turns see-through, showing that one in place
+    // (Windows' own "peek", through the same DWM call its taskbar uses)
+
+    [DllImport("dwmapi.dll", EntryPoint = "#113")]
+    static extern int DwmpActivateLivePreview(uint peekOn, IntPtr peekWindow, IntPtr topmostWindow, uint peekType, IntPtr reserved);
+
+    readonly System.Windows.Threading.DispatcherTimer peekDelay = new() { Interval = TimeSpan.FromMilliseconds(550) };
+    IntPtr peekTarget;
+    bool peeking;
+    static bool peekBroken;
+
+    void PeekSoon(IntPtr target)
+    {
+        if (peekBroken || Native.IsIconic(target)) return; // a minimised window has nothing to show in place
+        peekTarget = target;
+        peekDelay.Stop();
+        peekDelay.Tick -= PeekNow;
+        peekDelay.Tick += PeekNow;
+        peekDelay.Start();
+    }
+
+    void PeekNow(object? s, EventArgs e)
+    {
+        peekDelay.Stop();
+        if (peekTarget == IntPtr.Zero || hwnd == IntPtr.Zero) return;
+        try
+        {
+            // The preview itself stays on top, so you can move on to the next window or click this one
+            DwmpActivateLivePreview(1, peekTarget, hwnd, 1, IntPtr.Zero);
+            peeking = true;
+        }
+        catch (Exception ex) { peekBroken = true; Log.Note("preview", "peek isn't available on this Windows: " + ex.Message); }
+    }
+
+    void EndPeek()
+    {
+        peekDelay.Stop();
+        peekTarget = IntPtr.Zero;
+        if (!peeking) return;
+        peeking = false;
+        try { DwmpActivateLivePreview(0, IntPtr.Zero, IntPtr.Zero, 1, IntPtr.Zero); } catch { }
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -319,6 +363,15 @@ public sealed class WindowPreview : Window
     void Place()
     {
         if (PresentationSource.FromVisual(anchor) is not { CompositionTarget: { } ct }) return;
+        var side = DockWindow.SideFor(anchor);
+        if (side != "Bottom")
+        {
+            // A dock down a side: the previews open beside it, level with the app
+            var edge = ct.TransformFromDevice.Transform(anchor.PointToScreen(new Point(side == "Left" ? anchor.ActualWidth : 0, anchor.ActualHeight / 2)));
+            Left = side == "Left" ? edge.X + 10 : edge.X - ActualWidth - 10;
+            Top = Math.Clamp(edge.Y - ActualHeight / 2, SystemParameters.VirtualScreenTop + 8, SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight - ActualHeight - 8);
+            return;
+        }
         var dip = ct.TransformFromDevice.Transform(anchor.PointToScreen(new Point(anchor.ActualWidth / 2, 0)));
         Left = Math.Clamp(dip.X - ActualWidth / 2, SystemParameters.VirtualScreenLeft + 8, SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth - ActualWidth - 8);
         Top = Math.Max(8, dip.Y - ActualHeight - 10);

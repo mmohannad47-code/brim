@@ -45,6 +45,7 @@ public static class Wallpapers
     /// <param name="oled">Only pictures that are mostly true black, which look best (and save power) on OLED screens.</param>
     public static async Task<List<WallItem>> Pictures(string? query, bool anime, int page, bool oled = false)
     {
+        if (!Online.Wallpapers) return new();
         var url = new StringBuilder("https://wallhaven.cc/api/v1/search?purity=100&atleast=1920x1080&ratios=landscape");
         url.Append(anime ? "&categories=010" : oled ? "&categories=110" : "&categories=100");
         if (oled) url.Append("&colors=000000");
@@ -74,6 +75,7 @@ public static class Wallpapers
     /// <summary>Video wallpapers from Pixabay (free key from a Pixabay account).</summary>
     public static async Task<List<WallItem>> Videos(string? query, int page)
     {
+        if (!Online.Wallpapers) return new();
         var key = ApiKeys.Pixabay;
         if (key.Length == 0) throw new InvalidOperationException("no key");
         string url = $"https://pixabay.com/api/videos/?key={Uri.EscapeDataString(key)}&per_page=24&page={page}&safesearch=true&order=popular" +

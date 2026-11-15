@@ -72,7 +72,7 @@ public static class Updater
     static void QuietTick()
     {
         var s = SettingsStore.Current;
-        if (Now != State.Ready || !s.CheckUpdates || !s.AutoInstallUpdates) { quiet.Stop(); return; }
+        if (Now != State.Ready || !Online.Updates || !s.AutoInstallUpdates) { quiet.Stop(); return; }
         // Tried this very version a moment ago and still here (the install didn't take): don't go round in circles
         if (s.UpdateTried == NewVersion && DateTime.Now - s.UpdateTriedAt < TimeSpan.FromHours(6))
         {
@@ -101,11 +101,11 @@ public static class Updater
         CleanOld();
         if (!Allowed) return;
         quiet.Tick += (_, _) => QuietTick();
-        timer.Tick += (_, _) => { if (SettingsStore.Current.CheckUpdates) _ = Check(); };
+        timer.Tick += (_, _) => { if (Online.Updates) _ = Check(); };
         timer.Start();
         // First look soon after start-up (turning the PC on is a good time to update), once the network is up
         var first = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
-        first.Tick += (_, _) => { first.Stop(); if (SettingsStore.Current.CheckUpdates) _ = Check(); };
+        first.Tick += (_, _) => { first.Stop(); if (Online.Updates) _ = Check(); };
         first.Start();
     }
 
@@ -195,7 +195,7 @@ public static class Updater
             if (++failedChecks <= 3)
             {
                 var retry = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMinutes(2) };
-                retry.Tick += (_, _) => { retry.Stop(); if (SettingsStore.Current.CheckUpdates) _ = Check(); };
+                retry.Tick += (_, _) => { retry.Stop(); if (Online.Updates) _ = Check(); };
                 retry.Start();
             }
         }
