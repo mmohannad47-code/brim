@@ -14,6 +14,8 @@ public static class Installer
 {
     public static readonly string InstallDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Brim");
     static readonly string StartMenuLink = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Brim.lnk");
+    /// <summary>Explorer's right-click "Send to › Phone (Brim)"</summary>
+    static readonly string SendToLink = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.SendTo), "Phone (Brim).lnk");
     const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Brim";
 
     public static string Version => typeof(Installer).Assembly.GetName().Version?.ToString(3) ?? "0";
@@ -87,6 +89,7 @@ public static class Installer
         if (!File.Exists(exe)) throw new IOException($"Brim.exe didn't arrive in {InstallDir}");
 
         CreateShortcut(StartMenuLink, exe);
+        CreateShortcut(SendToLink, exe, "--phone-send", "Send to your phone with Brim");
         using (var k = Registry.CurrentUser.CreateSubKey(UninstallKey))
         {
             k.SetValue("DisplayName", "Brim");
@@ -131,6 +134,7 @@ public static class Installer
         try { Startup.Set(false); } catch { }
         try { WallpaperEngine.Control("play"); } catch { }
         try { if (File.Exists(StartMenuLink)) File.Delete(StartMenuLink); } catch { }
+        try { if (File.Exists(SendToLink)) File.Delete(SendToLink); } catch { }
         try { Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, false); } catch { }
 
         // Files in use can't delete themselves; a short-lived cmd does it once Brim has quit
@@ -164,7 +168,7 @@ public static class Installer
         return files;
     }
 
-    static void CreateShortcut(string link, string target)
+    static void CreateShortcut(string link, string target, string args = "", string description = "Brim: notch, dock and widgets for Windows")
     {
         try
         {
@@ -172,9 +176,10 @@ public static class Installer
             dynamic shell = Activator.CreateInstance(t!)!;
             dynamic sc = shell.CreateShortcut(link);
             sc.TargetPath = target;
+            if (args.Length > 0) sc.Arguments = args;
             sc.WorkingDirectory = Path.GetDirectoryName(target);
             sc.IconLocation = target + ",0";
-            sc.Description = "Brim: notch, dock and widgets for Windows";
+            sc.Description = description;
             sc.Save();
         }
         catch (Exception ex) { Log.Error("shortcut", ex); }

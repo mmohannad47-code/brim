@@ -423,6 +423,15 @@ public static class Snapshot
         Save(gallery, Path.Combine(folder, "gallery.png"));
         gallery.Close();
 
+        PhoneLink.TestLocal = true; // no firewall question for a snapshot
+        PhoneLink.SendText("https://example.com");
+        var phone = new PhoneWindow { Left = -4000, Top = 0, WindowStartupLocation = WindowStartupLocation.Manual };
+        phone.Show();
+        await Task.Delay(800);
+        Save(phone, Path.Combine(folder, "phone.png"));
+        phone.Close();
+        PhoneLink.Stop();
+
         var designed = new WidgetItem { Kind = WidgetKind.Custom, Lines = TextTokens.Presets["Greeting"]() };
         s.Widgets.Add(designed);
         var tall = new SettingsWindow { Left = -4000, Top = 0, Height = 2600, WindowStartupLocation = WindowStartupLocation.Manual };

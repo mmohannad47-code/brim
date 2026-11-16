@@ -338,6 +338,7 @@ public partial class NotchWindow : Window
             // (with Clear or Glass) it ends up 100% transparent and Windows stops sending it the mouse.
             Body.Background = Brushes.Black;
             FaceText.Effect = null;
+            Body.BorderThickness = new Thickness(0);
             return;
         }
         // Your own colour for the closed notch (the open one keeps the theme's)
@@ -348,18 +349,23 @@ public partial class NotchWindow : Window
             if (own is Color oc) Body.Background = new SolidColorBrush(oc);
             else Body.SetResourceReference(Border.BackgroundProperty, "Brim.Surface");
             FaceText.Effect = null;
+            Body.BorderThickness = new Thickness(0);
             return;
         }
         if (ClearAndClosed)
         {
             // Invisible, but still there to be pointed at
             Body.Background = new SolidColorBrush(Color.FromArgb(2, 0, 0, 0));
+            Body.BorderThickness = new Thickness(0);
             FaceText.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 8, ShadowDepth = 0, Opacity = 0.9, Color = Colors.Black };
         }
         else
         {
             var c = own ?? ThemeManager.Parse(ThemeManager.Current.Surface);
-            Body.Background = new SolidColorBrush(Backdrop.Tint(c, own != null ? (byte)0xA0 : (byte)0x70));
+            Body.Background = Backdrop.Glass(c, own != null ? (byte)0x80 : (byte)0x30, litFromBelow: true);
+            // The lit edge of the glass: sides and bottom (the top is the screen edge)
+            Body.BorderBrush = Backdrop.Available ? Backdrop.Rim(litFromBelow: true) : null;
+            Body.BorderThickness = Backdrop.Available ? new Thickness(1, 0, 1, 1) : new Thickness(0);
             FaceText.Effect = null;
         }
         SyncBackdrop();
@@ -1776,7 +1782,7 @@ public partial class NotchWindow : Window
     void UpdateShelfBar()
     {
         int n = SelectedFiles().Count;
-        ShelfInfo.Text = n == 0 ? "Click files to select · drag to copy them anywhere" : $"{n} selected · drag any of them to take all {n}";
+        ShelfInfo.Text = n == 0 ? "Click to select · drag out to copy" : $"{n} selected · drag one to take all";
         ShelfCopyBtn.IsEnabled = ShelfRemoveBtn.IsEnabled = n > 0;
         ShelfCopyBtn.Opacity = ShelfRemoveBtn.Opacity = n > 0 ? 1 : 0.4;
         ShelfAllBtn.Content = n == Shelf.Items.Count && n > 0 ? "Select none" : "Select all";
@@ -1899,6 +1905,11 @@ public partial class NotchWindow : Window
     }
 
     void ShelfClear_Click(object sender, RoutedEventArgs e) => Shelf.Items.Clear();
+
+    void ShelfPhone_Click(object sender, RoutedEventArgs e) => ((App)Application.Current).OpenPhone();
+
+    /// <summary>Open the notch on the Shelf (to show what just arrived).</summary>
+    public void OpenShelf() => Open(TabShelf);
 
     // ------------------------------------------------------------------ clipboard
 

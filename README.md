@@ -73,6 +73,15 @@ Menus close by themselves once your pointer has left the menu and what you opene
 
 **Settings › Widgets**: clock, day, calendar, music (with the lyrics being sung), weather (set your city), PC stats, day progress, world clock, notes, and your own designs (*Design your own*). Drag widgets to move them; right-click to customise, lock, combine or remove.
 
+### Your phone
+
+Send photos, videos, files, links and text between your PC and your **iPhone or Android phone** over your Wi-Fi, with nothing to install on the phone. Open the notch's **Shelf** and press **Phone** (or search *Phone* with Ctrl+Space), then scan the QR code with your phone's camera. A Brim page opens in the phone's browser:
+
+- **Phone → PC:** files and photos land in **Downloads** and on the **Shelf**. Links can be sent (copied on the PC) or opened on the PC straight away; text is copied.
+- **PC → phone:** anything on the Shelf shows on the phone page to view or save (folders come as a zip). Right-click a file in Explorer › **Send to › Phone (Brim)**, or type a link or text in the Phone window and press Send.
+- The phone and PC must be on the same Wi-Fi, set to **Private** in Windows (Settings › Network & internet › Wi-Fi). Allow Brim when Windows asks about the firewall the first time.
+- The QR code holds a secret code: without it the page refuses. Brim only answers devices on your home network, never runs on Public networks, and switches the link off after 15 minutes without your phone. *New QR code* locks out old links.
+
 ### Wallpapers
 
 **Settings › Desktop › Wallpapers** (or the tray icon):
@@ -119,7 +128,7 @@ Live wallpapers pause by themselves while a game or maximised window covers the 
 
 ## Privacy
 
-Brim runs on your PC. It only goes online to fetch the things you ask for: wallpapers (wallhaven.cc, Pixabay), game covers (Steam store, SteamGridDB), weather (Open-Meteo, only once you set a city), lyrics (LRCLIB) and website icons for your shortcuts. Notes, clipboard history, messages and settings never leave your PC.
+Brim runs on your PC. It only goes online to fetch the things you ask for: wallpapers (wallhaven.cc, Pixabay), game covers (Steam store, SteamGridDB), weather (Open-Meteo, only once you set a city), lyrics (LRCLIB) and website icons for your shortcuts. Notes, clipboard history, messages and settings never leave your PC. The phone link only works inside your home network and never goes through the internet.
 
 ---
 

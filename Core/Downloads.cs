@@ -187,6 +187,9 @@ public static class Downloads
 
     [DllImport("shell32.dll")] static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid id, uint flags, IntPtr token, out IntPtr path);
 
+    /// <summary>The Downloads folder (wherever it was moved to).</summary>
+    public static string Folder => KnownDownloads()!;
+
     static string? KnownDownloads()
     {
         try

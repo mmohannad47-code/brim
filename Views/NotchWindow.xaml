@@ -266,6 +266,8 @@
                                             <TextBlock Text="&#xE896;" FontFamily="{StaticResource Brim.Icons}" FontSize="26" HorizontalAlignment="Center" Foreground="{DynamicResource Brim.Dim}"/>
                                             <TextBlock Text="Drop files here to keep them handy" FontSize="13" Margin="0,8,0,0" HorizontalAlignment="Center"/>
                                             <TextBlock Text="Drag them back out into any app later" FontSize="11" Foreground="{DynamicResource Brim.Dim}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                            <Button Style="{StaticResource Pill}" Content="Swap with your phone" HorizontalAlignment="Center" Margin="0,12,0,0" Click="ShelfPhone_Click"
+                                                    ToolTip="Send files, photos and links between this PC and your phone"/>
                                         </StackPanel>
                                     </Border>
                                     <Grid x:Name="ShelfFull" Visibility="Collapsed">
@@ -304,9 +306,14 @@
                                             </ItemsControl>
                                         </ScrollViewer>
                                         <Grid Grid.Row="1" Margin="0,6,0,0">
-                                            <TextBlock x:Name="ShelfInfo" FontSize="11.5" Foreground="{DynamicResource Brim.Dim}" VerticalAlignment="Center"
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="ShelfInfo" FontSize="11.5" Foreground="{DynamicResource Brim.Dim}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"
                                                        Text="Click files to select · drag to move or copy"/>
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <Button Style="{StaticResource Pill}" Content="Phone" Margin="0,0,6,0" Click="ShelfPhone_Click" ToolTip="Send these to your phone, or get files from it"/>
                                                 <Button x:Name="ShelfCopyBtn" Style="{StaticResource Pill}" Content="Copy" Margin="0,0,6,0" Click="ShelfCopy_Click" ToolTip="Copy the selected files, then paste anywhere"/>
                                                 <Button x:Name="ShelfRemoveBtn" Style="{StaticResource Pill}" Content="Remove" Margin="0,0,6,0" Click="ShelfRemove_Click"/>
                                                 <Button x:Name="ShelfAllBtn" Style="{StaticResource Pill}" Content="Select all" Margin="0,0,6,0" Click="ShelfAll_Click"/>

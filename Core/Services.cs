@@ -23,6 +23,9 @@ public sealed class MessageWindow : IDisposable
     readonly HwndSource src;
     public event Action<int>? Hotkey;
     public event Action? ClipboardChanged;
+    /// <summary>A request from another copy of Brim (Explorer's "Send to › Phone" starts one with the files).</summary>
+    public event Action<string>? Command;
+    public const int CommandTag = 0xB219;
 
     public MessageWindow()
     {
@@ -62,8 +65,41 @@ public sealed class MessageWindow : IDisposable
     {
         if (msg == Native.WM_HOTKEY) { Hotkey?.Invoke(w.ToInt32()); handled = true; }
         else if (msg == Native.WM_CLIPBOARDUPDATE) { ClipboardChanged?.Invoke(); }
+        else if (msg == Native.WM_COPYDATA)
+        {
+            var cd = Marshal.PtrToStructure<Native.COPYDATASTRUCT>(l);
+            if (cd.dwData == (IntPtr)CommandTag && cd.cbData > 0 && cd.cbData < 1 << 20)
+            {
+                var text = Marshal.PtrToStringUni(cd.lpData, cd.cbData / 2);
+                src.Dispatcher.BeginInvoke(new Action(() => Command?.Invoke(text)));
+                handled = true;
+                return new IntPtr(1);
+            }
+        }
         return IntPtr.Zero;
     }
+
+    /// <summary>Hand a request to the Brim that's already running. False when there isn't one.</summary>
+    public static bool SendToRunning(string text)
+    {
+        var h = Native.FindWindowEx(new IntPtr(-3) /* message-only windows */, IntPtr.Zero, null, "BrimMessages");
+        if (h == IntPtr.Zero) return false;
+        var ptr = Marshal.StringToHGlobalUni(text);
+        try
+        {
+            var cd = new Native.COPYDATASTRUCT { dwData = (IntPtr)CommandTag, cbData = (text.Length + 1) * 2, lpData = ptr };
+            var cdp = Marshal.AllocHGlobal(Marshal.SizeOf<Native.COPYDATASTRUCT>());
+            try
+            {
+                Marshal.StructureToPtr(cd, cdp, false);
+                return SendMessageTimeout(h, Native.WM_COPYDATA, IntPtr.Zero, cdp, 0x2 /* ABORTIFHUNG */, 5000, out _) != IntPtr.Zero;
+            }
+            finally { Marshal.FreeHGlobal(cdp); }
+        }
+        finally { Marshal.FreeHGlobal(ptr); }
+    }
+
+    [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr h, int msg, IntPtr w, IntPtr l, uint flags, uint timeout, out IntPtr result);
 
     public void Dispose()
     {

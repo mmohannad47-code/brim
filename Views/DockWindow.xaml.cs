@@ -304,8 +304,9 @@ public partial class DockWindow : Window
         {
             case "Glass":
                 var c = own ?? ThemeManager.Parse(ThemeManager.Current.Surface);
-                Bar.Background = new SolidColorBrush(Backdrop.Tint(c, own != null ? (byte)0xA0 : (byte)0x66));
-                Bar.SetResourceReference(Border.BorderBrushProperty, "Brim.Stroke");
+                Bar.Background = Backdrop.Glass(c, own != null ? (byte)0x80 : (byte)0x2E);
+                if (Backdrop.Available) Bar.BorderBrush = Backdrop.Rim();
+                else Bar.SetResourceReference(Border.BorderBrushProperty, "Brim.Stroke");
                 Bar.BorderThickness = docked ? DockedBorder : new Thickness(1);
                 BarContent.Effect = null;
                 if (Backdrop.Available) backdrop ??= new Backdrop();

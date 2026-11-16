@@ -9,7 +9,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>Brim</AssemblyName>
     <RootNamespace>Brim</RootNamespace>
-    <Version>0.6.35</Version>
+    <Version>0.6.38</Version>
     <ApplicationIcon>Assets\brim.ico</ApplicationIcon>
     <!-- Declares Windows 8+ support (needed for the live wallpaper's own layer); keeps WPF's system DPI awareness -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -35,6 +35,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.6.0" />
     <PackageReference Include="System.Management" Version="8.0.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>

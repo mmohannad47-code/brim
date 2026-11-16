@@ -285,6 +285,12 @@ public class AppSettings
     public string PixabayKey { get; set; } = "";
     public bool LivePauseWhenCovered { get; set; } = true;
 
+    // Phone
+    /// <summary>The secret in the phone page's address (and its QR code); a new one locks out old links</summary>
+    public string? PhoneKey { get; set; }
+    /// <summary>The port the phone page is served on, kept so a page saved on the phone's home screen still works</summary>
+    public int PhonePort { get; set; }
+
     // Games
     public List<GameOverride> GameOverrides { get; set; } = new();
     /// <summary>Folders whose sub-folders are games. Empty = look for a "Games" folder on every drive.</summary>

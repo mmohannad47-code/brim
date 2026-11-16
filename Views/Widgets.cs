@@ -27,7 +27,7 @@ public static class WidgetStyles
 {
     public static readonly WidgetLook[] Looks =
     {
-        new("Glass",   "#47101014", "#38FFFFFF", "#FFFFFFFF", "#C8FFFFFF", "#33FFFFFF", true,  false),
+        new("Glass",   "#24101014", "#38FFFFFF", "#FFFFFFFF", "#C8FFFFFF", "#33FFFFFF", true,  false),
         new("Frost",   "#8CF4F4F8", "#80FFFFFF", "#FF141418", "#B3141418", "#26000000", true,  false),
         new("Tinted",  "#8C0E0E12", "#2EFFFFFF", "#FFF5F5F7", "#B3F5F5F7", "#33FFFFFF", false, false),
         new("Solid",   "",          "#1AFFFFFF", "",          "",          "#33FFFFFF", false, false),
@@ -118,8 +118,9 @@ public sealed class WidgetWindow : Window
             CornerRadius = new CornerRadius(item.Radius),
             Padding = lonelyDay ? new Thickness(8) : new Thickness(20, 16, 20, 18),
             BorderThickness = new Thickness(lonelyDay ? 0 : look.StrokeWidth),
-            Background = new SolidColorBrush(look.Blur && !lonelyDay ? Backdrop.Tint(ThemeManager.Parse(bg), ThemeManager.Parse(bg).A) : ThemeManager.Parse(bg)),
-            BorderBrush = new SolidColorBrush(ThemeManager.Parse(look.Stroke)),
+            Background = look.Blur && !lonelyDay ? Backdrop.Glass(ThemeManager.Parse(bg), ThemeManager.Parse(bg).A) : new SolidColorBrush(ThemeManager.Parse(bg)),
+            // Glass gets a lit edge; other looks keep their plain outline
+            BorderBrush = look.Name == "Glass" && !lonelyDay && Backdrop.Available ? Backdrop.Rim() : new SolidColorBrush(ThemeManager.Parse(look.Stroke)),
             Child = content,
             Margin = new Thickness(6),
             LayoutTransform = Math.Abs(item.Scale - 1) > 0.01 ? new ScaleTransform(item.Scale, item.Scale) : null,

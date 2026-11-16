@@ -142,6 +142,85 @@ public partial class App : Application
         Dispatcher.BeginInvoke(new Action(widgets.CheckDesktop), DispatcherPriority.Background);
     }
 
+    PhoneWindow? phoneWindow;
+
+    /// <summary>The phone window: its QR code turns on the phone link.</summary>
+    public void OpenPhone()
+    {
+        if (phoneWindow == null)
+        {
+            phoneWindow = new PhoneWindow();
+            phoneWindow.Closed += (_, _) => { phoneWindow = null; ScheduleTrim(); };
+            phoneWindow.Show();
+        }
+        if (phoneWindow.WindowState == WindowState.Minimized) phoneWindow.WindowState = WindowState.Normal;
+        phoneWindow.Activate();
+    }
+
+    /// <summary>Requests from another copy of Brim (see <see cref="MessageWindow.SendToRunning"/>).</summary>
+    void OnCommand(string text)
+    {
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        if (lines.Length == 0) return;
+        if (lines[0] == "phone-send")
+        {
+            var files = lines.Skip(1).Where(p => System.IO.File.Exists(p) || System.IO.Directory.Exists(p)).ToArray();
+            Log.Note("phone", $"Send to › Phone with {files.Length} file(s)");
+            if (files.Length > 0) Shelf.Add(files);
+            OpenPhone();
+        }
+    }
+
+    readonly System.Collections.Generic.List<string> fromPhone = new();
+    DispatcherTimer? fromPhoneTimer;
+
+    void WirePhone()
+    {
+        // Files: on the Shelf at once, and one pop-up for a batch ("3 photos from your iPhone")
+        PhoneLink.Received += path =>
+        {
+            Shelf.Add(new[] { path });
+            fromPhone.Add(path);
+            fromPhoneTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+            fromPhoneTimer.Tick -= FromPhoneTick;
+            fromPhoneTimer.Tick += FromPhoneTick;
+            fromPhoneTimer.Stop();
+            fromPhoneTimer.Start();
+        };
+        PhoneLink.TextReceived += (text, link, open) =>
+        {
+            try { Clipboard.SetText(text); } catch { }
+            string from = "From your " + PhoneLink.PhoneKind;
+            if (link)
+            {
+                string host = Uri.TryCreate(text, UriKind.Absolute, out var u) ? u.Host.Replace("www.", "") : text;
+                if (open) { Launcher.Open(text); notch?.ShowAction("", "Opened a link from your phone", host, () => Launcher.Open(text), 4); }
+                else notch?.ShowAction("", from + " · click to open", host, () => Launcher.Open(text), 10);
+            }
+            else
+            {
+                var preview = text.ReplaceLineEndings(" ");
+                notch?.ShowAction("", from + " · copied", preview.Length > 60 ? preview[..60] + "…" : preview, () => { }, 6);
+            }
+        };
+        PhoneLink.Connected += kind => notch?.ShowActivity("", $"{kind} connected");
+    }
+
+    void FromPhoneTick(object? sender, EventArgs e)
+    {
+        fromPhoneTimer?.Stop();
+        if (fromPhone.Count == 0) return;
+        static bool Photo(string p) => System.IO.Path.GetExtension(p).ToLowerInvariant() is ".jpg" or ".jpeg" or ".png" or ".heic" or ".heif" or ".gif" or ".webp";
+        static bool Video(string p) => System.IO.Path.GetExtension(p).ToLowerInvariant() is ".mp4" or ".mov" or ".m4v" or ".webm" or ".3gp";
+        int n = fromPhone.Count;
+        string what = fromPhone.All(Photo) ? (n == 1 ? "A photo" : $"{n} photos")
+            : fromPhone.All(Video) ? (n == 1 ? "A video" : $"{n} videos")
+            : fromPhone.All(p => Photo(p) || Video(p)) ? $"{n} photos and videos"
+            : n == 1 ? System.IO.Path.GetFileName(fromPhone[0]) : $"{n} files";
+        fromPhone.Clear();
+        notch?.ShowAction("", $"{what} from your {PhoneLink.PhoneKind}", "In Downloads and on the Shelf", () => notch?.OpenShelf(), 8);
+    }
+
     /// <summary>Turn a live wallpaper on (path) or off (null).</summary>
     public async void SetLiveWallpaper(string? path, bool refresh = true)
     {
@@ -441,7 +520,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test" or "--pins-test" or "--apps-test" or "--tray-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test" or "--pins-test" or "--apps-test" or "--tray-test" or "--phone-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -503,6 +582,99 @@ public partial class App : Application
                                 foreach (var a in allApps.Where(a => a.Id.Contains(":\\"))) sb.AppendLine($"{a.Name}  ←  {a.Id}");
                             }
                             break;
+                        case "--phone-test":
+                        {
+                            // The phone page's server, asked the way a phone would (on this PC only, saving into a temp folder)
+                            var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "brim-phone-test");
+                            if (System.IO.Directory.Exists(dir)) System.IO.Directory.Delete(dir, true);
+                            var got = System.IO.Directory.CreateDirectory(System.IO.Path.Combine(dir, "got")).FullName;
+                            var folder = System.IO.Directory.CreateDirectory(System.IO.Path.Combine(dir, "Holiday")).FullName;
+                            System.IO.File.WriteAllText(System.IO.Path.Combine(folder, "a.txt"), "first");
+                            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(folder, "sub"));
+                            System.IO.File.WriteAllText(System.IO.Path.Combine(folder, "sub", "b.txt"), "second");
+                            var photo = System.IO.Path.Combine(dir, "beach é.jpg");
+                            {
+                                var px = new byte[640 * 480 * 3];
+                                for (int i = 0; i < px.Length; i++) px[i] = (byte)(i * 7);
+                                var enc = new System.Windows.Media.Imaging.JpegBitmapEncoder();
+                                enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(System.Windows.Media.Imaging.BitmapSource.Create(640, 480, 96, 96, System.Windows.Media.PixelFormats.Rgb24, null, px, 640 * 3)));
+                                using var fs = System.IO.File.Create(photo);
+                                enc.Save(fs);
+                            }
+                            PhoneLink.TestLocal = true;
+                            PhoneLink.TestSaveTo = got;
+                            var texts = new System.Collections.Generic.List<string>();
+                            var files = new System.Collections.Generic.List<string>();
+                            PhoneLink.TextReceived += (t, link, open) => texts.Add($"{t}|link={link}|open={open}");
+                            PhoneLink.Received += p => files.Add(p);
+                            bool started = PhoneLink.Start();
+                            sb.AppendLine($"started={started} url={PhoneLink.Url?.Replace(SettingsStore.Current.PhoneKey ?? "~", "<key>")}");
+                            var uri = new Uri(PhoneLink.Url!);
+                            string baseUrl = $"http://127.0.0.1:{uri.Port}";
+                            string k = "k=" + SettingsStore.Current.PhoneKey;
+                            using var http = new System.Net.Http.HttpClient();
+                            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1");
+                            async System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage> Get(string path, string? range = null)
+                            {
+                                var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, baseUrl + path);
+                                if (range != null) req.Headers.TryAddWithoutValidation("Range", range);
+                                return await http.SendAsync(req);
+                            }
+                            sb.AppendLine($"no key: {(int)(await Get("/")).StatusCode}   wrong key: {(int)(await Get("/?k=nope")).StatusCode}");
+                            var page = await Get("/?" + k);
+                            sb.AppendLine($"page: {(int)page.StatusCode}, mentions this PC: {(await page.Content.ReadAsStringAsync()).Contains(Environment.MachineName)}");
+                            Shelf.Add(new[] { photo, folder });
+                            await System.Threading.Tasks.Task.Delay(100);
+                            PhoneLink.SendText("https://example.com/some/page");
+                            PhoneLink.SendText("a note from the PC");
+                            var state = await (await Get("/api/state?" + k)).Content.ReadAsStringAsync();
+                            using var doc = System.Text.Json.JsonDocument.Parse(state);
+                            var items = doc.RootElement.GetProperty("items").EnumerateArray().ToList();
+                            var posts = doc.RootElement.GetProperty("posts").EnumerateArray().ToList();
+                            sb.AppendLine($"state: {items.Count} items ({string.Join(", ", items.Select(i => i.GetProperty("name").GetString() + (i.GetProperty("image").GetBoolean() ? " [image]" : "")))}), {posts.Count} posts (newest: {posts[0].GetProperty("text").GetString()}, link: {posts[1].GetProperty("link").GetBoolean()})");
+                            string idPhoto = items.First(i => i.GetProperty("image").GetBoolean()).GetProperty("id").GetString()!;
+                            string idFolder = items.First(i => i.GetProperty("folder").GetBoolean()).GetProperty("id").GetString()!;
+                            var whole = await Get($"/f/{idPhoto}?" + k);
+                            var wb = await whole.Content.ReadAsByteArrayAsync();
+                            sb.AppendLine($"photo: {(int)whole.StatusCode} same bytes={wb.SequenceEqual(System.IO.File.ReadAllBytes(photo))} disposition={whole.Content.Headers.ContentDisposition}");
+                            var part = await Get($"/f/{idPhoto}?" + k, "bytes=100-199");
+                            sb.AppendLine($"range: {(int)part.StatusCode} {part.Content.Headers.ContentRange} length={(await part.Content.ReadAsByteArrayAsync()).Length}");
+                            var thumb = await Get($"/t/{idPhoto}?" + k);
+                            var tb = await thumb.Content.ReadAsByteArrayAsync();
+                            sb.AppendLine($"thumb: {(int)thumb.StatusCode} {thumb.Content.Headers.ContentType} {tb.Length} bytes (photo is {wb.Length})");
+                            var zip = await (await Get($"/f/{idFolder}?" + k)).Content.ReadAsByteArrayAsync();
+                            using (var za = new System.IO.Compression.ZipArchive(new System.IO.MemoryStream(zip)))
+                                sb.AppendLine($"folder zip: {string.Join(", ", za.Entries.Select(x => x.FullName))}");
+                            sb.AppendLine($"gone file: {(int)(await Get("/f/000000000000?" + k)).StatusCode}");
+                            // The phone sends things
+                            var upBytes = new byte[3_500_000];
+                            new Random(1).NextBytes(upBytes);
+                            var up = await http.PostAsync(baseUrl + "/api/up?name=" + Uri.EscapeDataString("IMG_0042.JPG") + "&" + k, new System.Net.Http.ByteArrayContent(upBytes));
+                            await http.PostAsync(baseUrl + "/api/up?name=" + Uri.EscapeDataString("IMG_0042.JPG") + "&" + k, new System.Net.Http.ByteArrayContent(new byte[] { 1, 2, 3 }));
+                            await http.PostAsync(baseUrl + "/api/up?name=" + Uri.EscapeDataString("../../evil.exe") + "&" + k, new System.Net.Http.ByteArrayContent(new byte[] { 1 }));
+                            await http.PostAsync(baseUrl + "/api/text?open=1&" + k, new System.Net.Http.StringContent("https://www.youtube.com/watch?v=abc"));
+                            await http.PostAsync(baseUrl + "/api/text?" + k, new System.Net.Http.StringContent("hello from the phone"));
+                            sb.AppendLine($"upload: {(int)up.StatusCode} {await up.Content.ReadAsStringAsync()}");
+                            await System.Threading.Tasks.Task.Delay(500);
+                            sb.AppendLine($"saved: {string.Join(", ", System.IO.Directory.GetFiles(got).Select(System.IO.Path.GetFileName))}");
+                            sb.AppendLine($"first upload intact: {System.IO.File.ReadAllBytes(System.IO.Path.Combine(got, "IMG_0042.JPG")).SequenceEqual(upBytes)}");
+                            sb.AppendLine($"received events: {files.Count}, on shelf: {Shelf.Items.Count(i => i.Path.StartsWith(got))}");
+                            sb.AppendLine($"texts: {string.Join("  ;  ", texts)}");
+                            sb.AppendLine($"phone seen as: {PhoneLink.PhoneKind}");
+                            if (e.Args.Length > 2 && e.Args[2] == "hold")
+                            {
+                                // Leave it up for a look at the page in a phone-sized browser
+                                System.IO.File.WriteAllText(e.Args[1] + ".url", PhoneLink.Url);
+                                await System.Threading.Tasks.Task.Delay(30000);
+                            }
+                            PhoneLink.Stop();
+                            bool closed;
+                            try { using var tc = new System.Net.Sockets.TcpClient(); await tc.ConnectAsync("127.0.0.1", uri.Port); closed = false; } catch { closed = true; }
+                            sb.AppendLine($"after stop, port closed: {closed}");
+                            Shelf.Items.Clear();
+                            System.IO.Directory.Delete(dir, true);
+                            break;
+                        }
                         case "--pins-test":
                             // What the dock would start with on a new setup (nothing is changed)
                             foreach (var (name, path, at) in TaskbarPins.Read()) sb.AppendLine($"{name}  ←  {path}  (at {at})");
@@ -1062,6 +1234,9 @@ public partial class App : Application
         single = new Mutex(true, "Brim.Desktop.SingleInstance", out bool created);
         if (!created)
         {
+            // Explorer's "Send to › Phone": hand the files to the Brim that's running
+            if (e.Args.Length >= 1 && e.Args[0] == "--phone-send")
+                MessageWindow.SendToRunning("phone-send\n" + string.Join("\n", e.Args.Skip(1)));
             Shutdown();
             return;
         }
@@ -1089,6 +1264,7 @@ public partial class App : Application
 
         messages = new MessageWindow();
         messages.Hotkey += OnHotkey;
+        messages.Command += OnCommand;
         ApplyHotkeys();
         WidgetWindow.WentOnTop += () => { notch?.EnsureTopmost(); foreach (var d in AllDocks) d.EnsureTopmost(); };
         AutoLook.Changed += () => ApplyAll();
@@ -1141,6 +1317,8 @@ public partial class App : Application
             };
             MessageCenter.Sync();
             Downloads.Start(); // the dock's download badge
+            WirePhone();
+            if (e.Args.Length >= 1 && e.Args[0] == "--phone-send") OnCommand("phone-send\n" + string.Join("\n", e.Args.Skip(1)));
             Updater.Ready += () =>
             {
                 // Installing by itself: it waits for a quiet moment, so there's nothing to ask

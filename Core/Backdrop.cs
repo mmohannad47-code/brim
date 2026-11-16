@@ -84,6 +84,49 @@ public sealed class Backdrop : IDisposable
     public static System.Windows.Media.Color Tint(System.Windows.Media.Color c, byte alpha) =>
         System.Windows.Media.Color.FromArgb(Available ? alpha : Math.Max(alpha, (byte)0xD0), c.R, c.G, c.B);
 
+    /// <summary>
+    /// The glass fill: the see-through tint with a soft light falling in from the lit edge (the top, or the bottom for
+    /// shapes hanging from the screen top), which is what makes it read as a pane of glass rather than tinted plastic.
+    /// Without Windows' blur it's the plain thick tint.
+    /// </summary>
+    public static System.Windows.Media.Brush Glass(System.Windows.Media.Color c, byte alpha, bool litFromBelow = false)
+    {
+        var tint = Tint(c, alpha);
+        if (!Available) { var flat = new System.Windows.Media.SolidColorBrush(tint); flat.Freeze(); return flat; }
+        // A light tint is already pale: there the light shows as the glass getting a little more frosted
+        bool light = ThemeManager.IsLight(c);
+        System.Windows.Media.Color Sheen(double amount, int extraAlpha)
+        {
+            byte Mix(byte v) => (byte)Math.Round(v + (255 - v) * amount);
+            return System.Windows.Media.Color.FromArgb((byte)Math.Min(255, tint.A + extraAlpha), Mix(tint.R), Mix(tint.G), Mix(tint.B));
+        }
+        var g = new System.Windows.Media.LinearGradientBrush
+        {
+            StartPoint = new System.Windows.Point(0, litFromBelow ? 1 : 0),
+            EndPoint = new System.Windows.Point(0, litFromBelow ? 0 : 1),
+        };
+        g.GradientStops.Add(new System.Windows.Media.GradientStop(Sheen(light ? 0.3 : 0.10, light ? 0x18 : 0x0C), 0));
+        g.GradientStops.Add(new System.Windows.Media.GradientStop(Sheen(light ? 0.1 : 0.03, light ? 0x06 : 0x03), 0.45));
+        g.GradientStops.Add(new System.Windows.Media.GradientStop(tint, 1));
+        g.Freeze();
+        return g;
+    }
+
+    /// <summary>The edge of a pane of glass: bright where the light hits, fading away from it.</summary>
+    public static System.Windows.Media.Brush Rim(bool litFromBelow = false)
+    {
+        var g = new System.Windows.Media.LinearGradientBrush
+        {
+            StartPoint = new System.Windows.Point(0, litFromBelow ? 1 : 0),
+            EndPoint = new System.Windows.Point(0, litFromBelow ? 0 : 1),
+        };
+        g.GradientStops.Add(new System.Windows.Media.GradientStop(System.Windows.Media.Color.FromArgb(0x66, 255, 255, 255), 0));
+        g.GradientStops.Add(new System.Windows.Media.GradientStop(System.Windows.Media.Color.FromArgb(0x24, 255, 255, 255), 0.35));
+        g.GradientStops.Add(new System.Windows.Media.GradientStop(System.Windows.Media.Color.FromArgb(0x14, 255, 255, 255), 1));
+        g.Freeze();
+        return g;
+    }
+
     public Backdrop()
     {
         var hInst = Native.GetModuleHandle(null);
