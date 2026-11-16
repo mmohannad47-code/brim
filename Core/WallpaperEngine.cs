@@ -129,6 +129,7 @@ public static class WallpaperEngine
     /// <summary>Send a command to the running Wallpaper Engine (play, pause…) without waiting for it.</summary>
     public static void Control(string command)
     {
+        Log.Trace("wallpaper engine: " + command);
         var exe = Exe();
         if (exe == null) return;
         System.Threading.Tasks.Task.Run(() =>

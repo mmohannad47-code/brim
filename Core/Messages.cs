@@ -64,13 +64,36 @@ sealed class AttentionWatcher : IDisposable
 
     public static int Signals;
 
+    static DateTime desktopToggledAt;
+
+    /// <summary>
+    /// The desktop was just shown or hidden (the Show desktop button, Win+D, three fingers down). Apps coming back
+    /// from that flash their taskbar button for a moment (Discord, VS Code and Chrome do), which isn't them asking for
+    /// you: those flashes are ignored.
+    /// </summary>
+    public static void DesktopToggled() => desktopToggledAt = DateTime.Now;
+
     IntPtr WndProc(IntPtr hwnd, int msg, IntPtr w, IntPtr l, ref bool handled)
     {
         if ((uint)msg == shellMsg)
         {
             Signals++;
             long code = w.ToInt64() & 0xFFFF;
-            if (code == 0x8006) seen(l, true);        // HSHELL_FLASH: a window wants attention
+            if (code == 0x8006)
+            {
+                // HSHELL_FLASH: a window wants attention. Wait a moment first: the flash can arrive just before Brim
+                // sees the desktop being toggled, and then it doesn't count.
+                var at = DateTime.Now;
+                var window = l;
+                var check = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+                check.Tick += (_, _) =>
+                {
+                    check.Stop();
+                    if ((at - desktopToggledAt).Duration() < TimeSpan.FromSeconds(2.5)) return; // came with the desktop toggling
+                    seen(window, true);
+                };
+                check.Start();
+            }
             else if (code == 0x0006) seen(l, false);  // HSHELL_REDRAW: a window's title changed
         }
         return IntPtr.Zero;

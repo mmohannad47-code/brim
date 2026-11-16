@@ -445,6 +445,7 @@ public partial class DockWindow : Window
     /// <summary>Ease the bar to this many pixels below its place (0 = shown), fading with it.</summary>
     void Slide(double to, bool fast = false, Action? done = null)
     {
+        if (to != slideTarget) Log.Trace($"dock: sliding {(to > 0 ? "away" : "in")}");
         if (Bar.RenderTransform is not TransformGroup)
             Bar.RenderTransform = new TransformGroup { Children = { oled, slide } };
         if (to == slideTarget && done == null) return;
@@ -566,6 +567,7 @@ public partial class DockWindow : Window
         if (steppedAside) return;
         // Don't jump in front of a hover label, a preview or an open panel
         if (HoverTip.IsShowing || Flyout.IsOpen) return;
+        if (hwnd != IntPtr.Zero && IsVisible) Log.Trace("dock: back on top");
         if (hwnd != IntPtr.Zero && IsVisible)
             Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
     }
@@ -574,6 +576,7 @@ public partial class DockWindow : Window
 
     void SetupAppBar()
     {
+        Log.Trace("dock: reserving its strip of the screen");
         if (hwnd == IntPtr.Zero || S.DockAutoHide || !S.DockReserve || ActualHeight <= 0) return;
         if (appBarMsg == 0) appBarMsg = Native.RegisterWindowMessage("BrimDockAppBar");
         var mon = Native.ScreenOrPrimary(ScreenId).Bounds;
@@ -1413,6 +1416,7 @@ public partial class DockWindow : Window
     async void Desktop_Click(object sender, RoutedEventArgs e)
     {
         keepVisibleUntil = DateTime.Now.AddSeconds(1.5);
+        AttentionWatcher.DesktopToggled(); // (the apps coming back flash for a moment: not a call for you)
         // If Start or Search is still open, close it and let it finish closing,
         // otherwise Explorer ignores the first toggle (that was the "needs a double click")
         var fg = Native.GetForegroundWindow();

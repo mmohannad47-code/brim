@@ -410,6 +410,7 @@ public partial class NotchWindow : Window
         foreach (var m in MirrorsOf()) m.EnsureTopmost();
         // While a right-click menu, dialog or drag is up, raising the notch would push it back over the menu
         if (holdOpen > 0 || HoverTip.IsShowing || mode == Mode.Open && AnyPopupOpen()) return;
+        if (hwnd != IntPtr.Zero && IsVisible) Log.Trace("notch: back on top");
         if (hwnd != IntPtr.Zero && IsVisible)
             Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
     }
@@ -767,6 +768,7 @@ public partial class NotchWindow : Window
 
     void AnimateBody(Size to, double radius, double ms, bool bouncy)
     {
+        Log.Trace($"notch: animating to {to.Width:0}x{to.Height:0}");
         var dur = new Duration(TimeSpan.FromMilliseconds(ms));
         IEasingFunction ease = bouncy
             ? new BackEase { Amplitude = 0.22, EasingMode = EasingMode.EaseOut }

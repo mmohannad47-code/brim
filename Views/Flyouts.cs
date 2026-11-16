@@ -790,7 +790,8 @@ public sealed class TrayPanel : StackPanel
     void Rebuild()
     {
         icons.Children.Clear();
-        foreach (var item in tray!.Icons.Where(i => !i.Hidden))
+        // The icons Brim was told about, then the ones only Windows' own tray has (so the list matches Windows')
+        foreach (var item in tray!.Icons.Where(i => !i.Hidden).Concat(TrayService.WindowsOnly(tray.Icons)))
         {
             var img = new Image { Width = 20, Height = 20 };
             img.SetBinding(Image.SourceProperty, new Binding(nameof(TrayIconItem.Icon)) { Source = item });
@@ -803,6 +804,14 @@ public sealed class TrayPanel : StackPanel
             // is the last thing to take focus (otherwise it closes again straight away)
             async void Forward(bool right, bool dbl)
             {
+                if (item.FromWindowsList)
+                {
+                    // Only Windows' own tray can pass clicks on to this one: left-click brings the app up; right-click
+                    // shows Windows' taskbar (the dock steps aside) so the app's own menu is there
+                    Flyout.CloseOpen();
+                    if (right) TaskbarManager.Peek(); else TrayService.OpenApp(item);
+                    return;
+                }
                 Native.AllowSetForegroundWindow(item.Pid);
                 if (right && item.Pid == Environment.ProcessId)
                 {

@@ -53,7 +53,7 @@ public static class TaskbarManager
     static void SetVisible(bool visible)
     {
         foreach (var h in AllBars())
-            if (Native.IsWindowVisible(h) != visible) Native.ShowWindow(h, visible ? Native.SW_SHOWNA : Native.SW_HIDE);
+            if (Native.IsWindowVisible(h) != visible) { Log.Trace($"taskbar: {(visible ? "show" : "hide")} {Native.ClassOf(h)}"); Native.ShowWindow(h, visible ? Native.SW_SHOWNA : Native.SW_HIDE); }
     }
 
     /// <summary>Remember how the user had it before Brim touched anything.</summary>

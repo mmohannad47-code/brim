@@ -251,6 +251,8 @@ public class AppSettings
     /// <summary>With a maximised window above the dock: Bar (solid, edge to edge) or Floating (wallpaper shows beside it)</summary>
     public string DockWhenMaximized { get; set; } = "Bar";
     public List<ShortcutItem> DockPins { get; set; } = new();
+    /// <summary>The dock was started with Windows' taskbar pins (done once; after that the pins are yours)</summary>
+    public bool DockPinsImported { get; set; }
     /// <summary>Your own order of dock icons (app keys), set by dragging them</summary>
     public List<string> DockOrder { get; set; } = new();
     public bool? OriginalAutoHide { get; set; }
@@ -375,6 +377,10 @@ public static class SettingsStore
             // anyone who picked one particular other screen keeps it)
             bool moved = false;
             if (!Current.DockEveryScreenOffered) { if (Current.DockScreen == "") Current.DockScreen = "*"; Current.DockEveryScreenOffered = true; moved = true; }
+            // Starting the dock with Windows' taskbar pins is for new setups only: anyone already using the dock (or with
+            // pins of their own) keeps exactly what they have
+            if (!Current.DockPinsImported && File.Exists(FilePath) && (Current.Taskbar == TaskbarMode.Dock || Current.DockPins.Count > 0))
+            { Current.DockPinsImported = true; moved = true; }
             if ((added.Count > 0 || moved) && File.Exists(FilePath)) Save();
         }
         catch (Exception ex)
@@ -409,6 +415,35 @@ public static class Log
             if (File.Exists(file) && new FileInfo(file).Length > 2_000_000) File.Delete(file); // never let it grow big
             File.AppendAllText(file, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{where}] {text}\n");
         }
+        catch { }
+        Trace($"[{where}] {text}");
+    }
+
+    static DateTime traceCheckedAt;
+    static bool tracing;
+
+    /// <summary>
+    /// While the file trace.on sits in Brim's settings folder: a detailed log, to the millisecond, of every window
+    /// change Brim sees and everything it does about it (trace.log), for chasing glitches like a gesture that stutters.
+    /// Off otherwise: nothing is written.
+    /// </summary>
+    public static bool Tracing
+    {
+        get
+        {
+            if ((DateTime.Now - traceCheckedAt).TotalSeconds > 1)
+            {
+                traceCheckedAt = DateTime.Now;
+                tracing = File.Exists(System.IO.Path.Combine(SettingsStore.Folder, "trace.on"));
+            }
+            return tracing;
+        }
+    }
+
+    public static void Trace(string text)
+    {
+        if (!Tracing) return;
+        try { File.AppendAllText(System.IO.Path.Combine(SettingsStore.Folder, "trace.log"), $"{DateTime.Now:HH:mm:ss.fff} {text}\n"); }
         catch { }
     }
 

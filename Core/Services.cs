@@ -111,7 +111,7 @@ sealed class KeyListener : IDisposable
             ready.Set();
             while (GetMessage(out _, IntPtr.Zero, 0, 0) > 0) { } // (a low-level hook needs its thread waiting for messages)
             if (hook != IntPtr.Zero) UnhookWindowsHookEx(hook);
-        }) { IsBackground = true, Name = "Brim shortcuts" };
+        }) { IsBackground = true, Name = "Brim shortcuts", Priority = System.Threading.ThreadPriority.Highest };
         t.Start();
         ready.Wait(2000);
     }
@@ -122,28 +122,42 @@ sealed class KeyListener : IDisposable
 
     static bool Down(int vk) => GetAsyncKeyState(vk) < 0;
 
+    /// <summary>For `--hotkey-test`, whose key presses are made up: let those count too.</summary>
+    public static bool AcceptInjected;
+
+    // Windows waits for this on every key press in the system, gestures' made-up ones included: it does as little as
+    // possible, never allocates (so Brim's memory clean-ups don't hold it up), and runs at the highest priority.
     IntPtr OnKey(int code, IntPtr w, IntPtr l)
     {
         if (code >= 0)
         {
-            var k = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(l);
+            uint vk = (uint)Marshal.ReadInt32(l);
+            uint flags = (uint)Marshal.ReadInt32(l, 8);
             int msg = w.ToInt32();
-            if (msg is 0x101 or 0x105 /* key up */) { if (k.vk == held) held = 0; }
-            else if (msg is 0x100 or 0x104 /* key down */)
+            if (msg is 0x101 or 0x105 /* key up */) { if (vk == held) held = 0; }
+            // Key presses made up by Windows itself (three-finger gestures, pinch to zoom) or by other programs aren't
+            // you pressing a Brim shortcut: straight through
+            else if (msg is 0x100 or 0x104 /* key down */ && ((flags & 0x10 /* LLKHF_INJECTED */) == 0 || AcceptInjected))
             {
-                uint mods = (Down(0x11) ? Native.MOD_CONTROL : 0) | (Down(0x12) ? Native.MOD_ALT : 0) |
-                            (Down(0x10) ? Native.MOD_SHIFT : 0) | (Down(0x5B) || Down(0x5C) ? Native.MOD_WIN : 0);
-                foreach (var c in combos)
+                var list = combos;
+                bool mine = false;
+                for (int i = 0; i < list.Length && !mine; i++) mine = list[i].Vk == vk;
+                if (mine)
                 {
-                    if (c.Vk != k.vk || c.Mods != mods) continue;
-                    if (held != k.vk)
+                    uint mods = (Down(0x11) ? Native.MOD_CONTROL : 0) | (Down(0x12) ? Native.MOD_ALT : 0) |
+                                (Down(0x10) ? Native.MOD_SHIFT : 0) | (Down(0x5B) || Down(0x5C) ? Native.MOD_WIN : 0);
+                    foreach (var c in list)
                     {
-                        held = k.vk;
-                        pressed(c.Id);
-                        // Win was held: tap a key that means nothing, or letting go of Win would open Start
-                        if ((c.Mods & Native.MOD_WIN) != 0) { Native.keybd_event(0xE8, 0, 0, UIntPtr.Zero); Native.keybd_event(0xE8, 0, 2, UIntPtr.Zero); }
+                        if (c.Vk != vk || c.Mods != mods) continue;
+                        if (held != vk)
+                        {
+                            held = vk;
+                            pressed(c.Id);
+                            // Win was held: tap a key that means nothing, or letting go of Win would open Start
+                            if ((c.Mods & Native.MOD_WIN) != 0) { Native.keybd_event(0xE8, 0, 0, UIntPtr.Zero); Native.keybd_event(0xE8, 0, 2, UIntPtr.Zero); }
+                        }
+                        return new IntPtr(1);
                     }
-                    return new IntPtr(1);
                 }
             }
         }

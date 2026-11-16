@@ -441,7 +441,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test" or "--pins-test" or "--apps-test" or "--tray-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -491,6 +491,22 @@ public partial class App : Application
                             sb.AppendLine((Environment.GetEnvironmentVariable("BRIM_GPU") == "1" ? "graphics card" : "CPU drawing") + ": " + MemoryCare.Describe());
                             break;
                         }
+                        case "--tray-test":
+                            // Background apps only Windows' own tray has (the ones Brim adds to its panel from Windows' record)
+                            foreach (var t in TrayService.WindowsOnly(Array.Empty<TrayIconItem>())) sb.AppendLine($"{System.IO.Path.GetFileName(t.ExePath)}  '{t.Tip}'  picture: {t.Icon != null}");
+                            break;
+                        case "--apps-test":
+                            // Apps search and the shortcut picker know about (the ones from outside the Start menu, and a count)
+                            {
+                                var allApps = AppCatalog.Fresh();
+                                sb.AppendLine($"{allApps.Count} apps");
+                                foreach (var a in allApps.Where(a => a.Id.Contains(":\\"))) sb.AppendLine($"{a.Name}  ←  {a.Id}");
+                            }
+                            break;
+                        case "--pins-test":
+                            // What the dock would start with on a new setup (nothing is changed)
+                            foreach (var (name, path, at) in TaskbarPins.Read()) sb.AppendLine($"{name}  ←  {path}  (at {at})");
+                            break;
                         case "--search-test":
                             // What Ctrl+Space finds among the settings for things people type
                             foreach (var q in new[] { "refresh rate", "hz", "pin", "mouse speed", "dark mode", "sticky keys", "dock left", "env", "screen timeout", "resolution", "drivers", "keyboard layout", "lyrics", "wifi password", "uninstall" })
@@ -565,6 +581,7 @@ public partial class App : Application
                             first.Hotkey += _ => firstGot++;
                             second.Hotkey += _ => secondGot++;
                             sb.AppendLine("first app gets it: " + first.Register(20, all, 0x7B, "test (first app)"));
+                            KeyListener.AcceptInjected = true; // (this test presses keys by sending them, which real use ignores)
                             sb.AppendLine("Brim gets it from Windows: " + second.Register(20, all, 0x7B, "test (Brim)"));
                             void Tap(byte vk, bool up) => Native.keybd_event(vk, 0, up ? 2u : 0u, UIntPtr.Zero);
                             for (int n = 0; n < 2; n++)
@@ -1201,6 +1218,7 @@ public partial class App : Application
                 }
                 if (dock == null)
                 {
+                    TaskbarPins.ImportOnce(); // the first time: the same pins as Windows' taskbar, in the same order
                     dock = new DockWindow();
                     dock.Show();
                 }
@@ -1354,6 +1372,7 @@ public partial class App : Application
     void OnWinEvent(IntPtr hook, uint ev, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
     {
         if (idObject != 0 || hwnd == IntPtr.Zero) return; // only whole windows (not the caret, cursor, scrollbars…)
+        if (Log.Tracing) Log.Trace($"event 0x{ev:X4} {Native.ClassOf(hwnd)} '{Native.TitleOf(hwnd)}'");
         if (ev == 0x800B)
         {
             // Only the window you're using can go fullscreen on you; everything else moving around doesn't matter
@@ -1443,8 +1462,12 @@ public partial class App : Application
     {
         // Alt+Tab, Task View or a swipe in progress: hold everything still until it's done (Brim used to slide the
         // notch and dock out and back under Windows' own animation, which made gestures stutter)
-        if (Native.SwitcherInFront()) return;
+        if (Native.SwitcherInFront()) { Log.Trace("react: skipped (switching)"); return; }
         reacts++;
+        Log.Trace("react: start");
+        // The desktop was just shown or hidden (three fingers down, Win+D, Show desktop): Windows is still animating
+        // the windows away or back. React once that's done, so nothing of Brim's moves under Windows' animation.
+        if (TrackDesktop()) { Log.Trace("react: the desktop toggled, waiting 350 ms"); afterDesktop.Stop(); afterDesktop.Start(); return; }
         NoteOnTop();
         var started = System.Diagnostics.Stopwatch.StartNew();
         LivePolicy.ApplyToWallpaperEngine();
@@ -1453,6 +1476,7 @@ public partial class App : Application
         TaskbarManager.Enforce();
         foreach (var d in AllDocks) d.RefreshApps();
         widgets.CheckDesktop();
+        Log.Trace($"react: done in {started.ElapsedMilliseconds} ms");
         // A reaction should take a few ms; note the slow ones (a frame is 16 ms)
         if (started.ElapsedMilliseconds > 40 && DateTime.Now - slowNotedAt > TimeSpan.FromMinutes(1))
         {
@@ -1463,6 +1487,25 @@ public partial class App : Application
 
     DateTime slowNotedAt;
     readonly System.Collections.Generic.HashSet<IntPtr> notedOnTop = new();
+    bool desktopShown;
+
+    /// <summary>The desktop was shown or hidden: apps flashing as they come back aren't asking for you (see AttentionWatcher).</summary>
+    bool TrackDesktop()
+    {
+        bool shown = Native.DesktopRaised();
+        if (shown == desktopShown) return false;
+        desktopShown = shown;
+        AttentionWatcher.DesktopToggled();
+        return true;
+    }
+
+    readonly DispatcherTimer afterDesktop = MakeAfterDesktop();
+    static DispatcherTimer MakeAfterDesktop()
+    {
+        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+        t.Tick += (_, _) => { t.Stop(); ((App)Current).React(); };
+        return t;
+    }
 
     /// <summary>
     /// An ordinary app window in front that's set to stay above everything (not by Brim): it can't be Alt+Tabbed away
@@ -1495,6 +1538,7 @@ public partial class App : Application
     {
         shellTicks++;
         CountActivity();
+        if (TrackDesktop() || afterDesktop.IsEnabled) { if (!afterDesktop.IsEnabled) afterDesktop.Start(); return; } // (see React)
         NoteOnTop(); // (an app stuck on top gets let go of within half a second, not only on the next switch)
         // Minimising the last window or clicking the desktop doesn't always send a focus-change event
         CheckAppInFront();
@@ -1502,6 +1546,13 @@ public partial class App : Application
         TaskbarManager.Enforce();
         widgets.CheckDesktop();
         if (shellTicks % 4 == 0) TrayService.Instance?.KeepInFront(); // every 2 s is plenty
+        // While tracing: every 30 s, the background apps Brim knows (to compare with Windows' own list)
+        if (Log.Tracing && shellTicks % 60 == 1 && TrayService.Instance is { } traySvc)
+            Log.Trace("tray icons: " + string.Join(" · ", traySvc.Icons.Select(i =>
+            {
+                Native.GetWindowThreadProcessId(new IntPtr(i.HWnd), out uint p);
+                return $"{System.IO.Path.GetFileName(Native.ProcessPath(p) ?? "?")}{(i.Hidden ? " (hidden)" : "")}{(i.Callback == 0 ? " (no click)" : "")}";
+            })));
         // Wallpaper Engine puts its wallpaper back on its own (desktop changes, restarts): keep Brim's showing
         if (WallpaperEngine.Guard() && S.LiveWallpaper != null) SetLiveWallpaper(null, refresh: false);
         if (shellTicks % 6 == 0)

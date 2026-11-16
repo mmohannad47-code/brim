@@ -225,6 +225,7 @@ public sealed class WidgetWindow : Window
     {
         if (hwnd == IntPtr.Zero) return;
         const uint flags = Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE;
+        Log.Trace($"widget: {(Raised ? "raised above windows" : "back on the desktop")}");
         if (Raised) { Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, 0, 0, 0, 0, flags); WentOnTop?.Invoke(); }
         else
         {

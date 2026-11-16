@@ -43,6 +43,13 @@ public sealed class TrayIconItem : Observable
     bool hidden;
     public bool Hidden { get => hidden; set => Set(ref hidden, value); }
 
+    /// <summary>
+    /// An icon only Windows' own tray has (the app added it before Brim was listening and never adds it again): known
+    /// from Windows' record of tray icons, by its program. Clicking it brings the app up rather than passing the click on.
+    /// </summary>
+    public string? ExePath { get; init; }
+    public bool FromWindowsList => ExePath != null && HWnd == 0;
+
     public bool Matches(uint hwnd, uint uid, Guid guid) =>
         guid != Guid.Empty && Guid == guid || guid == Guid.Empty && HWnd == hwnd && UID == uid;
 }
@@ -178,6 +185,7 @@ public sealed class TrayService : IDisposable
     /// <summary>Must stay ahead of Explorer's window so FindWindow returns ours.</summary>
     public void KeepInFront()
     {
+        Log.Trace("tray stand-in: back on top");
         if (hwnd != IntPtr.Zero)
             Native.SetWindowPos(hwnd, Native.HWND_TOPMOST, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
     }
@@ -194,8 +202,18 @@ public sealed class TrayService : IDisposable
         foreach (var dead in Icons.Where(i => !Native.IsWindow(new IntPtr(i.HWnd))).ToList()) Icons.Remove(dead);
     }
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClipboardFormatName(uint format, System.Text.StringBuilder name, int size);
+
     IntPtr WndProc(IntPtr h, uint msg, IntPtr w, IntPtr l)
     {
+        // While tracing: every message Windows and apps send "the taskbar" (Brim's stand-in gets them first)
+        if (Log.Tracing && h == hwnd && msg != Native.WM_COPYDATA)
+        {
+            var name = new System.Text.StringBuilder(64);
+            if (msg >= 0xC000) GetClipboardFormatName(msg, name, 64); // a registered message: its name
+            uint how = Native.InSendMessageEx(IntPtr.Zero);
+            Log.Trace($"tray stand-in got 0x{msg:X4} {name} w=0x{w.ToInt64():X} l=0x{l.ToInt64():X} {((how & 1) != 0 ? "sent" : "posted")}");
+        }
         try
         {
             if (h == hwnd && msg == Native.WM_COPYDATA)
@@ -225,6 +243,14 @@ public sealed class TrayService : IDisposable
             {
                 uint how = Native.InSendMessageEx(IntPtr.Zero);
                 if ((how & 0x1 /* ISMEX_SEND */) != 0 && (how & 0x2 /* ISMEX_NOTIFY */) == 0) return Forward(msg, w, l);
+                // Posted ones too, the taskbar's own private messages (not the registered ones, which can be broadcasts
+                // Explorer gets itself). Windows' three-finger "show desktop" talks to the taskbar with both kinds;
+                // keeping the posted half back broke the gesture whenever Brim was running.
+                if ((how & 0x1) == 0 && msg < 0x8000 && Native.ExplorerTray() is var real && real != IntPtr.Zero)
+                {
+                    Native.PostMessage(real, (int)msg, w, l);
+                    return IntPtr.Zero;
+                }
             }
         }
         catch (Exception ex) { Log.Error("tray wndproc", ex); }
@@ -359,6 +385,79 @@ public sealed class TrayService : IDisposable
             if (p == icon.Pid && h != new IntPtr(icon.HWnd)) Native.SendNotifyMessage(h, taskbarCreated, IntPtr.Zero, IntPtr.Zero);
             return true;
         }, IntPtr.Zero);
+    }
+
+    [DllImport("shell32.dll")] static extern int SHGetKnownFolderPath(ref Guid id, uint flags, IntPtr token, out IntPtr path);
+
+    /// <summary>Windows writes program paths here starting with a known folder's id ("{6D809377…}\Steam\steam.exe").</summary>
+    static string ExpandKnownFolder(string path)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(path, @"^\{([0-9A-Fa-f\-]{36})\}(.*)$");
+        if (!m.Success) return Environment.ExpandEnvironmentVariables(path);
+        var id = Guid.Parse(m.Groups[1].Value);
+        if (SHGetKnownFolderPath(ref id, 0, IntPtr.Zero, out var p) != 0) return path;
+        try { return Marshal.PtrToStringUni(p) + m.Groups[2].Value; }
+        finally { Marshal.FreeCoTaskMem(p); }
+    }
+
+    /// <summary>
+    /// Running apps that have an icon in Windows' own tray which Brim never got (apps add their icon once, and some
+    /// did before Brim was listening and never do it again): from Windows' record of tray icons, with its picture.
+    /// </summary>
+    public static System.Collections.Generic.List<TrayIconItem> WindowsOnly(System.Collections.Generic.IEnumerable<TrayIconItem> have)
+    {
+        var list = new System.Collections.Generic.List<TrayIconItem>();
+        try
+        {
+            var running = new System.Collections.Generic.Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in System.Diagnostics.Process.GetProcesses())
+                if (Native.ProcessPath((uint)p.Id) is { } path) running.TryAdd(path, (uint)p.Id);
+            // Programs Brim already shows an icon for
+            var shown = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var i in have)
+            {
+                uint pid = i.Pid;
+                if (pid == 0) Native.GetWindowThreadProcessId(new IntPtr(i.HWnd), out pid);
+                if (Native.ProcessPath(pid) is { } path) shown.Add(path);
+            }
+            using var root = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Control Panel\NotifyIconSettings");
+            if (root == null) return list;
+            foreach (var name in root.GetSubKeyNames())
+            {
+                using var k = root.OpenSubKey(name);
+                if (k?.GetValue("ExecutablePath") is not string raw) continue;
+                var exe = ExpandKnownFolder(raw);
+                if (!running.TryGetValue(exe, out uint pid) || shown.Contains(exe)) continue;
+                var file = System.IO.Path.GetFileName(exe).ToLowerInvariant();
+                if (file is "explorer.exe" or "brim.exe") continue; // Windows' own icons (network, sound…) are on the dock already
+                shown.Add(exe);
+                System.Windows.Media.ImageSource? picture = null;
+                if (k.GetValue("IconSnapshot") is byte[] png && png.Length > 8)
+                    try
+                    {
+                        var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                        bmp.BeginInit();
+                        bmp.StreamSource = new System.IO.MemoryStream(png);
+                        bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                        bmp.EndInit();
+                        bmp.Freeze();
+                        picture = bmp;
+                    }
+                    catch { }
+                var tip = k.GetValue("InitialTooltip") as string;
+                list.Add(new TrayIconItem { ExePath = exe, Pid = pid, Icon = picture ?? IconHelper.ForPath(exe), Tip = string.IsNullOrWhiteSpace(tip) ? "" : tip });
+            }
+        }
+        catch (Exception ex) { Log.Error("tray icons from windows", ex); }
+        return list;
+    }
+
+    /// <summary>A click on an icon only Windows' tray has: bring the app's window up, or open the app (which for a
+    /// tray app usually shows its window).</summary>
+    public static void OpenApp(TrayIconItem icon)
+    {
+        if (OwnWindow(icon)) return;
+        if (icon.ExePath != null) { Log.Note("tray", $"opening {System.IO.Path.GetFileName(icon.ExePath)} (its icon is only in Windows' own tray)"); Launcher.Open(icon.ExePath); }
     }
 
     static string ExeOf(TrayIconItem icon)

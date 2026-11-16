@@ -14,7 +14,9 @@ public sealed record AppEntry(string Name, string Id, string? Exe)
 {
     /// <summary>What a shortcut or dock pin stores: the real exe when there is one (so the dock can match the
     /// running window to the pin), otherwise Windows' app id.</summary>
-    public string LaunchPath => Exe ?? "shell:AppsFolder\\" + Id;
+    public string LaunchPath => Id.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) && Id.Contains(":\\")
+        ? Id // a desktop or taskbar shortcut: open it as it is (it can carry settings of its own); the dock still matches it to its program
+        : Exe ?? "shell:AppsFolder\\" + Id;
 }
 
 /// <summary>Every app in the Start menu, including Store apps, from the same list Start uses. Cached for a while.</summary>
@@ -122,8 +124,62 @@ public static class AppCatalog
             }
         }
         catch (Exception ex) { Log.Error("app catalog", ex); }
+        AddOthers(list);
         return list.GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase).Select(g => g.OrderByDescending(a => a.Exe != null).First())
                    .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// Apps that aren't in the Start menu but are clearly yours: shortcuts on the desktop, apps pinned to Windows'
+    /// taskbar, and anything running with a window (portable apps like DS4Windows, run from a downloads folder).
+    /// </summary>
+    static void AddOthers(List<AppEntry> list)
+    {
+        var known = new HashSet<string>(list.Where(a => a.Exe != null).Select(a => a.Exe!), StringComparer.OrdinalIgnoreCase);
+        var names = new HashSet<string>(list.Select(a => a.Name), StringComparer.OrdinalIgnoreCase);
+        void Add(string name, string id, string? exe)
+        {
+            if (exe != null && !known.Add(exe)) return; // the Start menu (or another place) already has it
+            if (!names.Add(name)) return;
+            list.Add(new AppEntry(name, id, exe));
+        }
+        try
+        {
+            string pinned = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Microsoft", "Internet Explorer", "Quick Launch", "User Pinned");
+            var folders = new[]
+            {
+                (Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), SearchOption.TopDirectoryOnly),
+                (Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory), SearchOption.TopDirectoryOnly),
+                (Path.Combine(pinned, "TaskBar"), SearchOption.TopDirectoryOnly),
+            };
+            foreach (var (folder, depth) in folders)
+            {
+                if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) continue;
+                foreach (var file in Directory.EnumerateFiles(folder, "*.*", depth))
+                {
+                    var ext = Path.GetExtension(file).ToLowerInvariant();
+                    if (ext is not (".lnk" or ".exe")) continue;
+                    var name = Path.GetFileNameWithoutExtension(file);
+                    if (Regex.IsMatch(name, @"(?i)\b(uninstall|uninstaller|readme)\b")) continue;
+                    var target = ext == ".lnk" ? IconHelper.ResolveShortcut(file) : file;
+                    // Programs only (a shortcut to a folder or a document isn't an app)
+                    if (target == null || !target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !File.Exists(target)) continue;
+                    Add(name, file, target);
+                }
+            }
+            // Running apps with a window of their own
+            foreach (var w in WindowTracker.TaskbarWindows())
+            {
+                var exe = w.ExePath;
+                if (exe == null || !File.Exists(exe) || StoreApps.Find(exe) != null) continue;
+                if (exe.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.Windows), StringComparison.OrdinalIgnoreCase)) continue;
+                if (w.Pid == (uint)Environment.ProcessId) continue;
+                // An app's helper that owns its window (Steam's web helper, a crash reporter): not something to open
+                if (Regex.IsMatch(Path.GetFileNameWithoutExtension(exe), @"(?i)helper|crashpad|crashhandler|reporter|updater|launcherhost")) continue;
+                Add(IconHelper.NiceName(exe), exe, exe);
+            }
+        }
+        catch (Exception ex) { Log.Error("app catalog extras", ex); }
     }
 
     public static ImageSource? Icon(AppEntry a, int size = 32) =>
