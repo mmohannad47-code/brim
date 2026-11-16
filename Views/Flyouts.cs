@@ -806,10 +806,20 @@ public sealed class TrayPanel : StackPanel
             {
                 if (item.FromWindowsList)
                 {
-                    // Only Windows' own tray can pass clicks on to this one: left-click brings the app up; right-click
-                    // shows Windows' taskbar (the dock steps aside) so the app's own menu is there
-                    Flyout.CloseOpen();
-                    if (right) TaskbarManager.Peek(); else TrayService.OpenApp(item);
+                    // Only Windows' own tray can pass clicks on to this one (Brim couldn't find how it's clicked):
+                    // left-click brings the app up; right-click offers that, or the app's own menu in Windows' tray
+                    if (!right) { Flyout.CloseOpen(); TrayService.OpenApp(item); return; }
+                    var name = item.Label.Split('\n')[0];
+                    var menu = new ContextMenu();
+                    var open = new MenuItem { Header = "Open " + name };
+                    open.Click += (_, _) => { Flyout.CloseOpen(); TrayService.OpenApp(item); };
+                    var own = new MenuItem { Header = name + "'s own menu (in Windows' tray)", ToolTip = "Shows Windows' taskbar for a few seconds: right-click the app's icon there" };
+                    own.Click += (_, _) => { Flyout.CloseOpen(); TaskbarManager.Peek(); };
+                    menu.Items.Add(open);
+                    menu.Items.Add(own);
+                    menu.PlacementTarget = cell;
+                    menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+                    menu.IsOpen = true;
                     return;
                 }
                 Native.AllowSetForegroundWindow(item.Pid);

@@ -493,7 +493,7 @@ public partial class App : Application
                         }
                         case "--tray-test":
                             // Background apps only Windows' own tray has (the ones Brim adds to its panel from Windows' record)
-                            foreach (var t in TrayService.WindowsOnly(Array.Empty<TrayIconItem>())) sb.AppendLine($"{System.IO.Path.GetFileName(t.ExePath)}  '{t.Tip}'  picture: {t.Icon != null}");
+                            foreach (var t in TrayService.WindowsOnly(Array.Empty<TrayIconItem>())) sb.AppendLine($"{System.IO.Path.GetFileName(t.ExePath)}  '{t.Label}'  picture: {t.Icon != null}  {(t.FromWindowsList ? "no way to click it yet" : $"wired: window {Native.ClassOf(new IntPtr(t.HWnd))}, icon {t.UID}{(t.OtherUids != null ? "+" : "")}, message 0x{t.Callback:X}")}");
                             break;
                         case "--apps-test":
                             // Apps search and the shortcut picker know about (the ones from outside the Start menu, and a count)

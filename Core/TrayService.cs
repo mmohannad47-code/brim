@@ -49,6 +49,8 @@ public sealed class TrayIconItem : Observable
     /// </summary>
     public string? ExePath { get; init; }
     public bool FromWindowsList => ExePath != null && HWnd == 0;
+    /// <summary>Icon numbers to try as well, when Windows keeps the icon under an id instead (only the right one reacts).</summary>
+    public uint[]? OtherUids { get; init; }
 
     public bool Matches(uint hwnd, uint uid, Guid guid) =>
         guid != Guid.Empty && Guid == guid || guid == Guid.Empty && HWnd == hwnd && UID == uid;
@@ -313,7 +315,7 @@ public sealed class TrayService : IDisposable
                         if (pendingVersions.Remove((n.hWnd, n.uID, guid), out var v)) existing.Version = v;
                         Icons.Add(existing);
                     }
-                    if ((n.uFlags & 0x1) != 0) existing.Callback = n.uCallbackMessage;
+                    if ((n.uFlags & 0x1) != 0) { existing.Callback = n.uCallbackMessage; Remember(existing); }
                     if ((n.uFlags & 0x2) != 0 && n.hIcon != 0)
                     {
                         // Some apps swap their icon several times a second (Discord while you talk in a call). Keep a
@@ -355,7 +357,7 @@ public sealed class TrayService : IDisposable
                     }
                     break;
                 case 4: // NIM_SETVERSION
-                    if (existing != null) existing.Version = n.uVersion;
+                    if (existing != null) { existing.Version = n.uVersion; Remember(existing); }
                     else
                     {
                         // Announced before the icon itself arrived: keep it for when it does
@@ -445,17 +447,100 @@ public sealed class TrayService : IDisposable
                     }
                     catch { }
                 var tip = k.GetValue("InitialTooltip") as string;
-                list.Add(new TrayIconItem { ExePath = exe, Pid = pid, Icon = picture ?? IconHelper.ForPath(exe), Tip = string.IsNullOrWhiteSpace(tip) ? "" : tip });
+                if (file == "monotificationux.exe") tip = "Windows Update"; // (its program is called "Notifications host process")
+                var bare = new TrayIconItem { ExePath = exe, Pid = pid, Icon = picture ?? IconHelper.ForPath(exe), Tip = string.IsNullOrWhiteSpace(tip) ? "" : tip };
+                list.Add(file == "monotificationux.exe" ? bare : Wire(bare, pid, file));
             }
         }
         catch (Exception ex) { Log.Error("tray icons from windows", ex); }
         return list;
     }
 
+    /// <summary>Remember how this app's icon is clicked, for a later session where the app starts before Brim.</summary>
+    static void Remember(TrayIconItem i)
+    {
+        if (i.Callback == 0 || i.HWnd == 0) return;
+        var exe = ExeOf(i);
+        if (exe.Length == 0 || exe is "explorer.exe" or "brim.exe") return;
+        var cls = Native.ClassOf(new IntPtr(i.HWnd));
+        var map = SettingsStore.Current.TrayWiring;
+        if (map.TryGetValue(exe, out var w) && w.Class == cls && w.Callback == i.Callback && w.Version == i.Version) return;
+        map[exe] = new TrayWiring { Class = cls, Uid = i.UID, Callback = i.Callback, Version = i.Version };
+        SettingsStore.Save();
+    }
+
+    [StructLayout(LayoutKind.Sequential)] struct NOTIFYICONIDENTIFIER { public uint cbSize; public IntPtr hWnd; public uint uID; public Guid guidItem; }
+    [DllImport("shell32.dll")] static extern int Shell_NotifyIconGetRect(ref NOTIFYICONIDENTIFIER id, out Native.RECT rect);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string? cls, string? title);
+
+    /// <summary>Every window of a process, message-only ones included (apps often keep their tray icon on one).</summary>
+    static System.Collections.Generic.List<IntPtr> WindowsOf(uint pid)
+    {
+        var list = new System.Collections.Generic.List<IntPtr>();
+        Native.EnumWindows((h, _) => { Native.GetWindowThreadProcessId(h, out uint p); if (p == pid) list.Add(h); return true; }, IntPtr.Zero);
+        for (IntPtr h = FindWindowEx(new IntPtr(-3), IntPtr.Zero, null, null); h != IntPtr.Zero; h = FindWindowEx(new IntPtr(-3), h, null, null))
+        {
+            Native.GetWindowThreadProcessId(h, out uint p);
+            if (p == pid) list.Add(h);
+        }
+        return list;
+    }
+
+    /// <summary>The icon number Windows has for this window's icon (null when it keeps it under an id instead).</summary>
+    static uint? IconNumber(IntPtr hwnd)
+    {
+        for (uint uid = 0; uid <= 64; uid++)
+        {
+            var id = new NOTIFYICONIDENTIFIER { cbSize = (uint)Marshal.SizeOf<NOTIFYICONIDENTIFIER>(), hWnd = hwnd, uID = uid };
+            if (Shell_NotifyIconGetRect(ref id, out _) == 0) return uid;
+        }
+        return null;
+    }
+
+    static readonly System.Collections.Generic.Dictionary<uint, DateTime> askedAgainAt = new();
+
+    /// <summary>
+    /// Wire up an icon only Windows' tray has, so a click (a right-click above all) reaches the app the way Windows
+    /// would send it: from how Brim saw this app's icon before, or Chrome's and Electron's standard way (Discord, Copilot…).
+    /// Meanwhile the app is asked once more to give Brim its icon (Vanguard and Wallpaper Engine do).
+    /// </summary>
+    static TrayIconItem Wire(TrayIconItem bare, uint pid, string file)
+    {
+        if (!askedAgainAt.TryGetValue(pid, out var at) || DateTime.Now - at > TimeSpan.FromMinutes(2))
+        {
+            askedAgainAt[pid] = DateTime.Now;
+            foreach (var h in WindowsOf(pid)) Native.SendNotifyMessage(h, taskbarCreated, IntPtr.Zero, IntPtr.Zero);
+        }
+        var windows = WindowsOf(pid);
+        IntPtr target = IntPtr.Zero;
+        uint uid = 0, callback = 0, version = 0;
+        uint[]? others = null;
+        if (SettingsStore.Current.TrayWiring.TryGetValue(file, out var w) &&
+            windows.FirstOrDefault(h => Native.ClassOf(h) == w.Class) is var known && known != IntPtr.Zero)
+        {
+            target = known; uid = IconNumber(known) ?? w.Uid; callback = w.Callback; version = w.Version;
+            if (IconNumber(known) == null) others = Enumerable.Range(1, 10).Select(n => (uint)n).Where(n => n != uid).ToArray();
+        }
+        else if (windows.FirstOrDefault(h => Native.ClassOf(h) is "Electron_NotifyIconHostWindow" or "Chrome_StatusTrayWindow") is var chrome && chrome != IntPtr.Zero)
+        {
+            // Chrome and Electron: their icons listen for WM_APP + 1 and number from 1
+            target = chrome; callback = 0x8001; version = 0;
+            if (IconNumber(chrome) is uint n) uid = n;
+            else { uid = 1; others = Enumerable.Range(2, 9).Select(x => (uint)x).ToArray(); }
+        }
+        if (target == IntPtr.Zero) return bare;
+        return new TrayIconItem
+        {
+            HWnd = (uint)target.ToInt64(), UID = uid, Callback = callback, Version = version, OtherUids = others,
+            Pid = pid, Icon = bare.Icon, Tip = bare.Tip, ExePath = bare.ExePath,
+        };
+    }
+
     /// <summary>A click on an icon only Windows' tray has: bring the app's window up, or open the app (which for a
     /// tray app usually shows its window).</summary>
     public static void OpenApp(TrayIconItem icon)
     {
+        if (KnownAction(icon)) return;
         if (OwnWindow(icon)) return;
         if (icon.ExePath != null) { Log.Note("tray", $"opening {System.IO.Path.GetFileName(icon.ExePath)} (its icon is only in Windows' own tray)"); Launcher.Open(icon.ExePath); }
     }
@@ -475,6 +560,7 @@ public sealed class TrayService : IDisposable
         string? open = ExeOf(icon) switch
         {
             "securityhealthsystray.exe" => "windowsdefender:", // Windows Security
+            "monotificationux.exe" => "ms-settings:windowsupdate", // Windows Update (an update waiting, or a restart)
             _ => null,
         };
         if (open == null) return false;
@@ -551,18 +637,21 @@ public sealed class TrayService : IDisposable
 
         void Send(int mouseMsg)
         {
-            IntPtr wp, lp;
-            if (icon.Version >= 4)
+            foreach (var uid in (icon.OtherUids ?? Array.Empty<uint>()).Prepend(icon.UID))
             {
-                wp = Native.MakeLParam(pt.X, pt.Y);
-                lp = Native.MakeLParam(mouseMsg, (int)icon.UID);
+                IntPtr wp, lp;
+                if (icon.Version >= 4)
+                {
+                    wp = Native.MakeLParam(pt.X, pt.Y);
+                    lp = Native.MakeLParam(mouseMsg, (int)uid);
+                }
+                else
+                {
+                    wp = new IntPtr(uid);
+                    lp = new IntPtr(mouseMsg);
+                }
+                Native.SendNotifyMessage(owner, icon.Callback, wp, lp);
             }
-            else
-            {
-                wp = new IntPtr(icon.UID);
-                lp = new IntPtr(mouseMsg);
-            }
-            Native.SendNotifyMessage(owner, icon.Callback, wp, lp);
         }
 
         if (right)

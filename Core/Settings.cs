@@ -75,6 +75,15 @@ public class ShortcutItem
     public bool Admin { get; set; }
 }
 
+/// <summary>How an app's tray icon is clicked: the kind of window it listens on, its icon number, its click message.</summary>
+public class TrayWiring
+{
+    public string Class { get; set; } = "";
+    public uint Uid { get; set; }
+    public uint Callback { get; set; }
+    public uint Version { get; set; }
+}
+
 public class WidgetItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -251,6 +260,12 @@ public class AppSettings
     /// <summary>With a maximised window above the dock: Bar (solid, edge to edge) or Floating (wallpaper shows beside it)</summary>
     public string DockWhenMaximized { get; set; } = "Bar";
     public List<ShortcutItem> DockPins { get; set; } = new();
+    /// <summary>
+    /// How each app's tray icon is clicked (its window type, icon number and click message), remembered from when the
+    /// app last gave Brim its icon: an app that started before Brim only tells Windows' own tray, and this still lets
+    /// Brim open its menu. By program file name.
+    /// </summary>
+    public Dictionary<string, TrayWiring> TrayWiring { get; set; } = new();
     /// <summary>The dock was started with Windows' taskbar pins (done once; after that the pins are yours)</summary>
     public bool DockPinsImported { get; set; }
     /// <summary>Your own order of dock icons (app keys), set by dragging them</summary>
