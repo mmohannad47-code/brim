@@ -659,6 +659,24 @@ public partial class App : Application
                             using (var za = new System.IO.Compression.ZipArchive(new System.IO.MemoryStream(zip)))
                                 sb.AppendLine($"folder zip: {string.Join(", ", za.Entries.Select(x => x.FullName))}");
                             sb.AppendLine($"gone file: {(int)(await Get("/f/000000000000?" + k)).StatusCode}");
+                            {
+                                // The phone clears its "From your PC" list: links/text go, Shelf files only leave the phone's list
+                                async System.Threading.Tasks.Task<string> Counts()
+                                {
+                                    using var d = System.Text.Json.JsonDocument.Parse(await (await Get("/api/state?" + k)).Content.ReadAsStringAsync());
+                                    return $"{d.RootElement.GetProperty("items").GetArrayLength()} items, {d.RootElement.GetProperty("posts").GetArrayLength()} posts";
+                                }
+                                long firstPost = posts[1].GetProperty("id").GetInt64();
+                                var rm1 = await http.PostAsync($"{baseUrl}/api/remove?post={firstPost}&{k}", null);
+                                var rm2 = await http.PostAsync($"{baseUrl}/api/remove?item={idPhoto}&{k}", null);
+                                var rmNoKey = await http.PostAsync($"{baseUrl}/api/remove?all=1", null);
+                                sb.AppendLine($"remove one post + one file: {(int)rm1.StatusCode}/{(int)rm2.StatusCode} -> {await Counts()} (shelf still has {Shelf.Items.Count}); no key: {(int)rmNoKey.StatusCode}");
+                                PhoneLink.SendText("another note");
+                                await http.PostAsync($"{baseUrl}/api/remove?all=1&{k}", null);
+                                sb.AppendLine($"clear all: {await Counts()} (shelf still has {Shelf.Items.Count})");
+                                Shelf.Items.Remove(Shelf.Items.First(i => i.Path == photo)); await System.Threading.Tasks.Task.Delay(50); Shelf.Add(new[] { photo }); await System.Threading.Tasks.Task.Delay(50);
+                                sb.AppendLine($"photo put back on the shelf: {await Counts()}");
+                            }
                             // The phone sends things
                             var upBytes = new byte[3_500_000];
                             new Random(1).NextBytes(upBytes);
@@ -677,8 +695,26 @@ public partial class App : Application
                             if (e.Args.Length > 2 && e.Args[2] == "hold")
                             {
                                 // Leave it up for a look at the page in a phone-sized browser
+                                PhoneLink.SendText("https://example.com/some/page");
+                                PhoneLink.SendText("a note from the PC");
                                 System.IO.File.WriteAllText(e.Args[1] + ".url", PhoneLink.Url);
                                 await System.Threading.Tasks.Task.Delay(30000);
+                            }
+                            {
+                                // "Only while this window is open": closing the Phone window turns the link off (not saved)
+                                bool was = SettingsStore.Current.PhoneOnlyWhileOpen;
+                                SettingsStore.Current.PhoneOnlyWhileOpen = false;
+                                var w1 = new Brim.Views.PhoneWindow { Left = -4000, Top = -4000, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual };
+                                w1.Show(); w1.Close();
+                                bool onAfterOff = PhoneLink.On;
+                                SettingsStore.Current.PhoneOnlyWhileOpen = true;
+                                var w2 = new Brim.Views.PhoneWindow { Left = -4000, Top = -4000, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual };
+                                w2.Show();
+                                bool onWhileOpen = PhoneLink.On;
+                                w2.Close();
+                                sb.AppendLine($"only while open: option off -> on after close={onAfterOff}; option on -> on while open={onWhileOpen}, on after close={PhoneLink.On}");
+                                SettingsStore.Current.PhoneOnlyWhileOpen = was;
+                                if (!PhoneLink.On) PhoneLink.Start();
                             }
                             PhoneLink.Stop();
                             bool closed;

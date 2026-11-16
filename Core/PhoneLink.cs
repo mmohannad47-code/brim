@@ -35,6 +35,8 @@ public static class PhoneLink
     static string key = "";
     static volatile (string id, string path)[] offered = Array.Empty<(string, string)>();
     static readonly List<Post> posts = new();
+    /// <summary>Shelf files the phone cleared from its list (they stay on the PC's Shelf).</summary>
+    static readonly HashSet<string> hidden = new();
     static long nextPost = 1;
     static readonly object gate = new();
     static readonly Dictionary<string, byte[]> thumbs = new();
@@ -151,6 +153,7 @@ public static class PhoneLink
     static void ShelfChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs? e)
     {
         offered = Shelf.Items.Select(i => (IdOf(i.Path), i.Path)).ToArray();
+        lock (gate) hidden.IntersectWith(offered.Select(o => o.id));
         lastUse = DateTime.Now;
     }
 
@@ -294,6 +297,10 @@ public static class PhoneLink
                 case ("POST", "/api/text"):
                     await ReceiveText(s, req);
                     break;
+                case ("POST", "/api/remove"):
+                    Remove(req);
+                    await Send(s, 200, "application/json", Encoding.UTF8.GetBytes("{\"ok\":true}"));
+                    break;
                 case ("POST", "/api/up"):
                     await ReceiveFile(s, req, ct);
                     break;
@@ -399,7 +406,7 @@ public static class PhoneLink
 
     static byte[] State()
     {
-        var items = offered.Select(o =>
+        var items = offered.Where(o => { lock (gate) return !hidden.Contains(o.id); }).Select(o =>
         {
             bool dir = Directory.Exists(o.path);
             long size = 0;
@@ -525,6 +532,18 @@ public static class PhoneLink
             catch { await Send(s, 404, "text/plain", Array.Empty<byte>()); return; }
         }
         await Send(s, 200, "image/jpeg", jpg);
+    }
+
+    /// <summary>The phone clears things from its "From your PC" list: links and text go for good, Shelf files just leave the phone's list.</summary>
+    static void Remove(Request r)
+    {
+        lock (gate)
+        {
+            if (r.Query.ContainsKey("all")) { posts.Clear(); foreach (var o in offered) hidden.Add(o.id); }
+            if (r.Query.TryGetValue("post", out var p) && long.TryParse(p, out var pid)) posts.RemoveAll(x => x.Id == pid);
+            if (r.Query.TryGetValue("item", out var i) && offered.Any(o => o.id == i)) hidden.Add(i);
+        }
+        lastUse = DateTime.Now;
     }
 
     static async Task ReceiveText(Stream s, Request r)

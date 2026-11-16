@@ -60,6 +60,12 @@ textarea{width:100%;min-height:76px;font:inherit;font-size:16px;color:var(--text
 #toast.show{opacity:1;transform:translateX(-50%)}
 #clipbox{margin-top:10px;display:none}
 input[type=file]{display:none}
+[hidden]{display:none!important}
+#posts:not(:empty)+#items .item:first-child{border-top:1px solid var(--line)}
+.head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.head h2{flex:1;margin:0}
+button.small{padding:6px 12px;font-size:13.5px;border-radius:10px}
+.acts button.x{padding:8px 10px;background:transparent;color:var(--dim);font-size:16px;line-height:1}
 </style>
 </head>
 <body>
@@ -86,8 +92,8 @@ input[type=file]{display:none}
 </section>
 
 <section class="card">
-  <h2>From your PC</h2>
-  <p class="hint" id="fromHint">Files on the notch's Shelf, and links and text sent from the PC.</p>
+  <div class="head"><h2>From your PC</h2><button id="clearAll" class="small" hidden>Clear all</button></div>
+  <p class="hint" id="fromHint">Files on the notch's Shelf, and links and text sent from the PC. ✕ clears one from this list; files stay on the PC's Shelf.</p>
   <div id="posts"></div>
   <div id="items"></div>
 </section>
@@ -177,6 +183,7 @@ function render(s) {
       acts.append(linkBtn(p.text, 'Open', 'primary'));
     } else info.append(el('div', 'post-text', p.text), el('div', 'sub', 'Text · ' + p.at));
     const c = el('button', '', 'Copy'); c.onclick = () => copy(p.text); acts.append(c);
+    acts.append(xBtn(row, 'post=' + p.id));
     row.append(el('div', 'thumb', p.link ? '🔗' : '✎'), info, acts);
     posts.append(row);
   }
@@ -188,11 +195,26 @@ function render(s) {
     info.append(el('div', 'name', it.name), el('div', 'sub', it.folder ? 'Folder · comes as a zip' : size(it.size)));
     if (it.image || it.video) acts.append(linkBtn(api('/f/' + it.id + '?view=1'), 'View'));
     const d = linkBtn(api('/f/' + it.id), 'Save', 'primary'); d.setAttribute('download', it.name); d.target = ''; acts.append(d);
+    acts.append(xBtn(row, 'item=' + it.id));
     row.append(thumb, info, acts);
     items.append(row);
   }
-  if (!s.posts.length && !s.items.length) items.append(el('div', 'empty', 'Nothing yet. On the PC, drop files on the notch\'s Shelf, or send a link from Brim\'s Phone window.'));
+  const none = !s.posts.length && !s.items.length;
+  $('clearAll').hidden = none;
+  if (none) items.append(el('div', 'empty', 'Nothing yet. On the PC, drop files on the notch\'s Shelf, or send a link from Brim\'s Phone window.'));
 }
+// ---------- clearing the list
+async function remove(q) {
+  try { const r = await fetch(api('/api/remove?' + q), { method: 'POST' }); if (!r.ok) throw 0; }
+  catch (e) { toast("Couldn't reach the PC"); }
+  last = ''; poll();
+}
+function xBtn(row, q) {
+  const b = el('button', 'x', '✕'); b.setAttribute('aria-label', 'Clear from this list');
+  b.onclick = () => { row.remove(); remove(q); };
+  return b;
+}
+$('clearAll').onclick = () => { if (confirm('Clear everything from this list? Files stay on the PC\'s Shelf.')) { $('posts').replaceChildren(); $('items').replaceChildren(); remove('all=1'); } };
 async function poll() {
   if (document.visibilityState !== 'visible') return;
   try {

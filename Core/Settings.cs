@@ -290,6 +290,8 @@ public class AppSettings
     public string? PhoneKey { get; set; }
     /// <summary>The port the phone page is served on, kept so a page saved on the phone's home screen still works</summary>
     public int PhonePort { get; set; }
+    /// <summary>The phone link is only on while Brim's Phone window is open: closing it turns the link off</summary>
+    public bool PhoneOnlyWhileOpen { get; set; }
 
     // Games
     public List<GameOverride> GameOverrides { get; set; } = new();

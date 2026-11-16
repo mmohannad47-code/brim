@@ -52,6 +52,7 @@ public sealed class PhoneWindow : Window
             PhoneLink.Watched = false;
             PhoneLink.Changed -= Build;
             tick.Stop();
+            if (SettingsStore.Current.PhoneOnlyWhileOpen) PhoneLink.Stop(); // nothing comes or goes while this window is closed
         };
         if (!PhoneLink.On) PhoneLink.Start();
         Build();
@@ -128,12 +129,47 @@ public sealed class PhoneWindow : Window
         fresh.ToolTip = "Make a new code. Phones that scanned the old one (or saved it to their home screen) can't connect until they scan again.";
         foot.Children.Add(fresh);
         body.Children.Add(foot);
-        body.Children.Add(new TextBlock
+
+        // Only while this window is open
+        var only = new Grid { Margin = new Thickness(0, 16, 0, 0) };
+        only.ColumnDefinitions.Add(new ColumnDefinition());
+        only.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var onlyText = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+        onlyText.Children.Add(new TextBlock { Text = "Only while this window is open", FontSize = 13.5, FontWeight = FontWeights.SemiBold });
+        onlyText.Children.Add(new TextBlock
         {
-            Text = "Brim turns this off by itself after 15 minutes without your phone. If the page won't open on your phone, check that Windows allowed Brim through the firewall.",
-            FontSize = 11.5, Foreground = Dim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0),
+            Text = "Closing this window turns the link off, so nothing can be sent either way until you open it again.",
+            FontSize = 12, Foreground = Dim, TextWrapping = TextWrapping.Wrap,
         });
+        only.Children.Add(onlyText);
+        var sw = new CheckBox { IsChecked = SettingsStore.Current.PhoneOnlyWhileOpen, VerticalAlignment = VerticalAlignment.Center };
+        sw.SetResourceReference(StyleProperty, "Switch");
+        TextBlock? offNote = null;
+        void SetOnly(bool v)
+        {
+            SettingsStore.Current.PhoneOnlyWhileOpen = v;
+            SettingsStore.Save();
+            if (offNote != null) offNote.Text = OffNote();
+        }
+        sw.Checked += (_, _) => SetOnly(true);
+        sw.Unchecked += (_, _) => SetOnly(false);
+        Grid.SetColumn(sw, 1);
+        only.Children.Add(sw);
+        body.Children.Add(only);
+
+        offNote = new TextBlock
+        {
+            Text = OffNote(),
+            FontSize = 11.5, Foreground = Dim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0),
+        };
+        body.Children.Add(offNote);
     }
+
+    static string OffNote() =>
+        (SettingsStore.Current.PhoneOnlyWhileOpen
+            ? "The link turns off when you close this window."
+            : "Brim turns this off by itself after 15 minutes without your phone.")
+        + " If the page won't open on your phone, check that Windows allowed Brim through the firewall.";
 
     void BuildProblem()
     {
