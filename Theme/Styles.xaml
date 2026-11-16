@@ -472,11 +472,19 @@
                         <Border x:Name="Bd" Padding="12,7" CornerRadius="6" Background="Transparent">
                             <Grid>
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="Arrow" Grid.Column="1" Text="&#xE76C;" FontFamily="{StaticResource Brim.Icons}" FontSize="9"
+                                <!-- Items you can switch on and off ("Always on top", "Always run as administrator"…): a box,
+                                     filled with a tick when it's on -->
+                                <Border x:Name="CheckBox" Width="15" Height="15" CornerRadius="4" Margin="0,0,9,0" VerticalAlignment="Center"
+                                        BorderBrush="#66FFFFFF" BorderThickness="1.3" Background="Transparent" Visibility="Collapsed">
+                                    <TextBlock x:Name="Tick" Text="&#xE73E;" FontFamily="{StaticResource Brim.Icons}" FontSize="10"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource Brim.OnAccent}" Visibility="Hidden"/>
+                                </Border>
+                                <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="Arrow" Grid.Column="2" Text="&#xE76C;" FontFamily="{StaticResource Brim.Icons}" FontSize="9"
                                            Margin="16,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
                             </Grid>
                         </Border>
@@ -496,6 +504,15 @@
                         </Trigger>
                         <Trigger Property="Role" Value="SubmenuHeader">
                             <Setter TargetName="Arrow" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsCheckable" Value="True">
+                            <Setter TargetName="CheckBox" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="CheckBox" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="CheckBox" Property="Background" Value="{DynamicResource Brim.Accent}"/>
+                            <Setter TargetName="CheckBox" Property="BorderBrush" Value="{DynamicResource Brim.Accent}"/>
+                            <Setter TargetName="Tick" Property="Visibility" Value="Visible"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.4"/>

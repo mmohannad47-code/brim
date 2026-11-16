@@ -103,6 +103,22 @@ public static class Snapshot
         notch.Close();
     }
 
+    /// <summary>A right-click menu with items you can tick (on and off), as the dock and the Games tab show them.</summary>
+    public static async Task MenuShot(string png)
+    {
+        var items = new System.Windows.Controls.StackPanel { Margin = new Thickness(4), Width = 250 };
+        items.Children.Add(new System.Windows.Controls.MenuItem { Header = "New window" });
+        items.Children.Add(new System.Windows.Controls.MenuItem { Header = "Lock the icons in place", IsCheckable = true, IsChecked = true });
+        items.Children.Add(new System.Windows.Controls.MenuItem { Header = "Always run as administrator", IsCheckable = true, IsChecked = false });
+        items.Children.Add(new System.Windows.Controls.MenuItem { Header = "Close window" });
+        var card = new System.Windows.Controls.Border { Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x23)), CornerRadius = new CornerRadius(8), Child = items };
+        var host = new Window { WindowStyle = WindowStyle.None, ShowInTaskbar = false, ShowActivated = false, Left = -4000, Top = 0, SizeToContent = SizeToContent.WidthAndHeight, Content = card };
+        host.Show();
+        await Task.Delay(400);
+        Save(host, png);
+        host.Close();
+    }
+
     public static async Task Run(string folder)
     {
         Directory.CreateDirectory(folder);
@@ -445,6 +461,8 @@ public static class Snapshot
         set.Close();
 
         File.WriteAllText(Path.Combine(folder, "glass.txt"), Core.Backdrop.Available ? "Windows blurs: glass uses the blur layer" : "Windows won't blur: glass uses a plain tint");
+
+        await MenuShot(Path.Combine(folder, "menu-checks.png"));
 
         // The colour wheel on its own (it normally lives in a pop-up)
         var wheel = new Views.ColourWheel(Color.FromRgb(0xE3, 0x12, 0x2F));

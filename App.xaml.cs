@@ -950,6 +950,19 @@ public partial class App : Application
             });
             return;
         }
+        if (e.Args.Length == 2 && e.Args[0] == "--menu-snapshot")
+        {
+            SettingsStore.Load();
+            SettingsStore.ReadOnly = true;
+            ThemeManager.Apply();
+            Dispatcher.InvokeAsync(async () =>
+            {
+                try { await Snapshot.MenuShot(e.Args[1]); }
+                catch (Exception ex) { Log.Error("menu snapshot", ex); }
+                Shutdown();
+            });
+            return;
+        }
         if (e.Args.Length == 2 && e.Args[0] == "--lyrics-snapshot")
         {
             SettingsStore.Load();
@@ -1432,6 +1445,7 @@ public partial class App : Application
         // notch and dock out and back under Windows' own animation, which made gestures stutter)
         if (Native.SwitcherInFront()) return;
         reacts++;
+        NoteOnTop();
         var started = System.Diagnostics.Stopwatch.StartNew();
         LivePolicy.ApplyToWallpaperEngine();
         CheckAppInFront();
@@ -1448,11 +1462,40 @@ public partial class App : Application
     }
 
     DateTime slowNotedAt;
+    readonly System.Collections.Generic.HashSet<IntPtr> notedOnTop = new();
+
+    /// <summary>
+    /// An ordinary app window in front that's set to stay above everything (not by Brim): it can't be Alt+Tabbed away
+    /// from, which users put down to Brim. Noted once per window, so a report says which app it was.
+    /// </summary>
+    void NoteOnTop()
+    {
+        var fg = Native.GetForegroundWindow();
+        if (fg == IntPtr.Zero || notedOnTop.Contains(fg)) return;
+        if ((Native.GetWindowLongPtr(fg, Native.GWL_EXSTYLE).ToInt64() & (Native.WS_EX_TOPMOST | Native.WS_EX_TOOLWINDOW)) != Native.WS_EX_TOPMOST) return;
+        Native.GetWindowThreadProcessId(fg, out uint pid);
+        if (pid == Environment.ProcessId || Native.TitleOf(fg).Length == 0 || !Native.IsWindowVisible(fg)) return;
+        var r = Native.VisibleRect(fg);
+        if (r.Right - r.Left < 400 || r.Bottom - r.Top < 300) return; // small always-on-top windows (a mini player, a picture-in-picture) are meant to be
+        var who = $"{System.IO.Path.GetFileName(Native.ProcessPath(pid) ?? "?")} '{Native.TitleOf(fg)}'";
+        // Maximised and pinned above everything: nobody means that (you pin small windows), and it leaves you unable
+        // to Alt+Tab away. Some apps (Electron ones like VS Code and Discord were seen doing it) end up like that by
+        // themselves: let go of it, so switching works again.
+        if (Native.IsZoomed(fg))
+        {
+            Native.SetWindowPos(fg, new IntPtr(-2) /* HWND_NOTOPMOST */, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+            Log.Note("ontop", $"{who} was maximised and stuck on top of every window (not by Brim): unpinned it, so Alt+Tab works");
+            return;
+        }
+        notedOnTop.Add(fg);
+        Log.Note("ontop", $"{who} is set to stay on top of every window (not by Brim): Alt+Tab can't move it out of the way");
+    }
 
     void ShellTick()
     {
         shellTicks++;
         CountActivity();
+        NoteOnTop(); // (an app stuck on top gets let go of within half a second, not only on the next switch)
         // Minimising the last window or clicking the desktop doesn't always send a focus-change event
         CheckAppInFront();
         ApplyFullscreen();
