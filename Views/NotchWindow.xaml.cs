@@ -390,6 +390,7 @@ public partial class NotchWindow : Window
     void SyncBackdrop()
     {
         if (backdrop == null) return;
+        if (bodyAnimating) { backdrop.Hide(); return; } // (comes back once the notch has settled)
         if (!IsVisible || fullscreenHidden || Sliver || ClearAndClosed || Body.ActualWidth < 2 || PresentationSource.FromVisual(Body) == null)
         {
             backdrop.Hide();
@@ -450,6 +451,7 @@ public partial class NotchWindow : Window
         return false;
     }
 
+    internal void DebugClose() => Collapse();
     internal void DebugOpen(string tab) => Open(tab switch
     {
         "Apps" => TabApps,
@@ -760,13 +762,34 @@ public partial class NotchWindow : Window
         ApplyRadius();
     }
 
+    bool bodyAnimating;
+    int bodyGen;
+
     void AnimateBody(Size to, double radius, double ms, bool bouncy)
     {
         var dur = new Duration(TimeSpan.FromMilliseconds(ms));
         IEasingFunction ease = bouncy
             ? new BackEase { Amplitude = 0.22, EasingMode = EasingMode.EaseOut }
             : new CubicEase { EasingMode = EasingMode.EaseOut };
-        Body.BeginAnimation(WidthProperty, new DoubleAnimation(to.Width, dur) { EasingFunction = ease });
+        // Glass while it grows or shrinks: the blur layer is a separate window, and moving and re-blurring it on every
+        // frame made the animation stutter (most of all on 60 Hz screens). It steps away meanwhile, the notch is a
+        // near-solid tint, and the blur comes back the moment it settles.
+        int gen = ++bodyGen;
+        if (S.NotchSurface != "Solid" && !ClearAndClosed && !(HideMode && sliverSettled))
+        {
+            bodyAnimating = true;
+            backdrop?.Hide();
+            Color? own = mode != Mode.Open && S.NotchColor != null ? ThemeManager.Parse(S.NotchColor) : null;
+            Body.Background = new SolidColorBrush(Backdrop.Tint(own ?? ThemeManager.Parse(ThemeManager.Current.Surface), 0xE6));
+        }
+        var grow = new DoubleAnimation(to.Width, dur) { EasingFunction = ease };
+        grow.Completed += (_, _) =>
+        {
+            if (gen != bodyGen || !bodyAnimating) return; // a newer animation took over
+            bodyAnimating = false;
+            ApplySurface(); // the see-through tint and the blur behind it, at the final size
+        };
+        Body.BeginAnimation(WidthProperty, grow);
         Body.BeginAnimation(HeightProperty, new DoubleAnimation(to.Height, dur) { EasingFunction = ease });
         BeginAnimation(RadiusProperty, new DoubleAnimation(radius, dur) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
     }
@@ -812,7 +835,9 @@ public partial class NotchWindow : Window
         Fade(PeekView, 0, 90);
         Fade(ActivityView, 0, 90);
         activityTimer.Stop();
-        Fade(OpenView, 1, 220, SpeedMs * 0.3);
+        // The content fades in as the notch finishes growing, briefly: a fade blends the whole content on every frame,
+        // which is costly, so the fewer frames it runs for the smoother the opening (measured: about a fifth less work)
+        Fade(OpenView, 1, 140, SpeedMs * 0.6);
         Tab_Checked(this, new RoutedEventArgs());
         RefreshOpen();
         UpdateTint();
@@ -1511,11 +1536,14 @@ public partial class NotchWindow : Window
         Collapse();
     }
 
-    // ---------- drag shortcuts to put them in your own order (like the Games tab and the dock)
+    // ---------- drag shortcuts to put them in your own order, with the same movement as the dock and the Games tab:
+    // the tile lifts and follows the pointer across the rows, the others slide aside, and it settles where you let go
 
     ShortcutVM? tilePressed;
     Point tilePressAt;
-    bool tileDragging, swallowTileClick;
+    bool swallowTileClick;
+    LiveReorder? tileReorder;
+    Panel? tileHost;
 
     void AppTile_Press(object sender, MouseButtonEventArgs e)
     {
@@ -1526,48 +1554,40 @@ public partial class NotchWindow : Window
 
     void AppTile_DragMove(object sender, MouseEventArgs e)
     {
-        if (tilePressed == null || e.LeftButton != MouseButtonState.Pressed) return;
-        var at = e.GetPosition(AppsList);
-        if (!tileDragging)
+        if (tilePressed == null || e.LeftButton != MouseButtonState.Pressed || tileReorder?.Active == true) return;
+        if ((e.GetPosition(AppsList) - tilePressAt).Length < 8) return;
+        if (AppsList.ItemContainerGenerator.ContainerFromItem(tilePressed) is not FrameworkElement box || VisualTreeHelper.GetParent(box) is not Panel host) return;
+        if (tileHost != host) tileReorder = null; // the tiles were rebuilt
+        tileHost = host;
+        holdOpen++; // keep the notch open while you drag
+        tileReorder ??= new LiveReorder(host, c => c.DataContext is ShortcutVM { IsAdd: false }, (_, from, to) => shortcuts.Move(from, to), changed =>
         {
-            if ((at - tilePressAt).Length < 8) return;
-            tileDragging = true;
-            holdOpen++; // keep the notch open while you drag
-            tilePressed.Dragging = true;
-        }
-        // Which tile is the pointer over? (tiles wrap onto several rows)
-        int from = shortcuts.IndexOf(tilePressed), to = from;
-        for (int i = 0; i < shortcuts.Count; i++)
-        {
-            if (shortcuts[i].IsAdd) continue;
-            if (AppsList.ItemContainerGenerator.ContainerFromIndex(i) is not FrameworkElement c) continue;
-            var r = new Rect(c.TranslatePoint(new Point(0, 0), AppsList), c.RenderSize);
-            if (r.Contains(at)) { to = i; break; }
-        }
-        if (from >= 0 && to != from) shortcuts.Move(from, to);
+            holdOpen = Math.Max(0, holdOpen - 1);
+            tilePressed = null;
+            // The button would take letting go as a click: skip that one
+            swallowTileClick = true;
+            Dispatcher.BeginInvoke(new Action(() => swallowTileClick = false), DispatcherPriority.Input);
+            if (changed)
+            {
+                // Save the new order (the Ctrl+Alt+number keys follow it), once the tile has settled
+                var order = shortcuts.Where(s => s.Item != null).Select(s => s.Item!).ToList();
+                S.Shortcuts.Clear();
+                S.Shortcuts.AddRange(order);
+                SettingsStore.Save();
+                var renumber = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(260) };
+                renumber.Tick += (_, _) => { renumber.Stop(); RebuildShortcuts(); ((App)Application.Current).RefreshSettingsWindow(); };
+                renumber.Start();
+            }
+            if (!Body.IsMouseOver) leaveTimer.Start();
+        }, lift: 0, liftScale: 1.08) { Wrap = true };
+        tileReorder.Begin(box, e.GetPosition(host));
     }
 
     void AppTile_DragEnd(object sender, MouseButtonEventArgs e)
     {
-        var moved = tilePressed;
-        tilePressed = null;
-        if (!tileDragging) return;
-        tileDragging = false;
-        holdOpen = Math.Max(0, holdOpen - 1);
-        if (moved != null) moved.Dragging = false;
-        // Save the new order (and the Ctrl+Alt+number keys follow it)
-        var order = shortcuts.Where(s => s.Item != null).Select(s => s.Item!).ToList();
-        S.Shortcuts.Clear();
-        S.Shortcuts.AddRange(order);
-        SettingsStore.Save();
-        swallowTileClick = true;
-        Dispatcher.BeginInvoke(new Action(() => swallowTileClick = false), DispatcherPriority.Input);
-        ((UIElement)sender).ReleaseMouseCapture();
-        e.Handled = true;
-        RebuildShortcuts(); // renumber the badges
-        ((App)Application.Current).RefreshSettingsWindow();
-        if (!Body.IsMouseOver) leaveTimer.Start();
+        if (tileReorder?.Active != true) tilePressed = null; // a plain click (a drag ends in the reorder itself)
     }
+
 
     void AppTile_RightClick(object sender, MouseButtonEventArgs e)
     {

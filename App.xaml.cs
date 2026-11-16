@@ -180,7 +180,7 @@ public partial class App : Application
 
         // Brim's UI is small and mostly still: drawing it on the CPU avoids loading the graphics driver,
         // which was most of the memory use
-        System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+        if (Environment.GetEnvironmentVariable("BRIM_GPU") != "1") System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
 
         if (e.Args.Length == 2 && e.Args[0] == "--backdrop-test")
         {
@@ -441,7 +441,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -452,6 +452,53 @@ public partial class App : Application
                 {
                     switch (e.Args[0])
                     {
+                        case "--notch-anim-test":
+                        {
+                            // How smoothly the notch opens: the time each frame took while it grows, for each surface
+                            SettingsStore.Load();
+                            ThemeManager.Apply();
+                            foreach (var surface in new[] { "Solid", "Glass", "Clear" })
+                            {
+                                S.NotchSurface = surface;
+                                var n = new Brim.Views.NotchWindow();
+                                n.Show();
+                                n.Left = -4000;
+                                await System.Threading.Tasks.Task.Delay(1500);
+                                for (int run = 0; run < 3; run++)
+                                {
+                                    var frames = new System.Collections.Generic.List<double>();
+                                    EventHandler tick = (_, a) => frames.Add(((System.Windows.Media.RenderingEventArgs)a).RenderingTime.TotalMilliseconds);
+                                    System.Windows.Media.CompositionTarget.Rendering += tick;
+                                    await System.Threading.Tasks.Task.Delay(150); // a few calm frames first, to know the screen's pace
+                                    int calm = frames.Count;
+                                    var cpuBefore = System.Diagnostics.Process.GetCurrentProcess().TotalProcessorTime;
+                                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                                    n.DebugOpen(Environment.GetEnvironmentVariable("BRIM_ANIM_TAB") ?? "Home");
+                                    long call = sw.ElapsedMilliseconds;
+                                    await System.Threading.Tasks.Task.Delay(600);
+                                    System.Windows.Media.CompositionTarget.Rendering -= tick;
+                                    var cpuMs = (System.Diagnostics.Process.GetCurrentProcess().TotalProcessorTime - cpuBefore).TotalMilliseconds;
+                                    var gaps = frames.Zip(frames.Skip(1), (a, b) => b - a).Where(g => g > 0.1).ToList();
+                                    double pace = gaps.Take(Math.Max(1, calm - 1)).DefaultIfEmpty(16.7).Average();
+                                    var during = gaps.Skip(Math.Max(0, calm - 1)).ToList();
+                                    sb.AppendLine($"{surface} run {run + 1}: Open() took {call} ms; screen pace {pace:0.0} ms; while opening {during.Count} frames, " +
+                                                  $"longest {during.DefaultIfEmpty(0).Max():0} ms, {during.Count(g => g > pace * 1.6)} late; CPU {cpuMs:0} ms");
+                                    n.DebugClose();
+                                    await System.Threading.Tasks.Task.Delay(700);
+                                }
+                                n.Close();
+                            }
+                            sb.AppendLine((Environment.GetEnvironmentVariable("BRIM_GPU") == "1" ? "graphics card" : "CPU drawing") + ": " + MemoryCare.Describe());
+                            break;
+                        }
+                        case "--search-test":
+                            // What Ctrl+Space finds among the settings for things people type
+                            foreach (var q in new[] { "refresh rate", "hz", "pin", "mouse speed", "dark mode", "sticky keys", "dock left", "env", "screen timeout", "resolution", "drivers", "keyboard layout", "lyrics", "wifi password", "uninstall" })
+                            {
+                                var hits = SettingsIndex.All.Select(e => (e, s: SettingsIndex.Match(e, q))).Where(x => x.s > 0).OrderByDescending(x => x.s).Take(3);
+                                sb.AppendLine($"{q,-16} → " + string.Join("  |  ", hits.Select(h => $"{h.e.Name} ({h.s})")));
+                            }
+                            break;
                         case "--lang-test":
                             foreach (var l in KeyboardLanguage.All()) sb.AppendLine($"installed: {l.Short} {l.Region} · {l.Name} (0x{l.Hkl.ToInt64():X})");
                             sb.AppendLine("now, in the window in front: " + (KeyboardLanguage.Current() is { } cur ? $"{cur.Short} {cur.Region} · {cur.Name}" : "unknown"));
@@ -1007,6 +1054,7 @@ public partial class App : Application
         FirstRun();
         ThemeManager.Apply();
         TaskbarManager.Init();
+        TaskbarManager.Peeking += time => { foreach (var d in AllDocks) d.StepAside(time); };
         SystemInfo.Sample();
 
         messages = new MessageWindow();

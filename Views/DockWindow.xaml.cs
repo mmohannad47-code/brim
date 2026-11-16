@@ -542,15 +542,28 @@ public partial class DockWindow : Window
             if (slideTarget >= Depth && !slideRunning) Visibility = Visibility.Hidden;
             else Slide(Depth, fast: true, done: () => { if (fullscreen) Visibility = Visibility.Hidden; });
         }
-        else
+        else if (!steppedAside) // (out of Windows' taskbar's way for now: it comes back by itself)
         {
             Visibility = Visibility.Visible;
             Place(); // slides back up (or stays tucked away with auto-hide)
         }
     }
 
+    bool steppedAside;
+
+    /// <summary>Windows' own taskbar is up for a moment (an icon only it can click): get out of its way, then come back.</summary>
+    public async void StepAside(TimeSpan time)
+    {
+        steppedAside = true;
+        Visibility = Visibility.Hidden;
+        await System.Threading.Tasks.Task.Delay(time);
+        steppedAside = false;
+        if (!fullscreen) { Visibility = Visibility.Visible; Place(); }
+    }
+
     public void EnsureTopmost()
     {
+        if (steppedAside) return;
         // Don't jump in front of a hover label, a preview or an open panel
         if (HoverTip.IsShowing || Flyout.IsOpen) return;
         if (hwnd != IntPtr.Zero && IsVisible)

@@ -31,6 +31,13 @@ sealed class LiveReorder
 
     public bool Active => item != null;
 
+    /// <summary>Items that wrap onto several rows (the Shortcuts tab): the carried item follows the pointer anywhere, and
+    /// goes to whichever place it is nearest.</summary>
+    public bool Wrap { get; set; }
+    Vector grab2;
+
+    static Point Mid(FrameworkElement el) { var s = Slot(el); return new Point(s.X + s.Width / 2, s.Y + s.Height / 2); }
+
     /// <summary>A column instead of a row (the dock on the side of the screen): everything runs along Y, and the lift is sideways.</summary>
     public bool Vertical { get; set; }
 
@@ -100,11 +107,12 @@ sealed class LiveReorder
         item = el;
         startIndex = Items.IndexOf(el);
         grab = Along(pointer) - Start(el);
+        grab2 = pointer - Slot(el).TopLeft;
         var p = PartsOf(el);
         Panel.SetZIndex(el, 100);
         Animate(p.Scale, ScaleTransform.ScaleXProperty, liftScale, 160);
         Animate(p.Scale, ScaleTransform.ScaleYProperty, liftScale, 160);
-        Animate(p.Move, AcrossProp, Vertical ? 0 : lift, 160);
+        if (!Wrap) Animate(p.Move, AcrossProp, Vertical ? 0 : lift, 160);
         el.Effect = new DropShadowEffect { BlurRadius = 16, ShadowDepth = 4, Direction = 270, Opacity = 0.55, Color = Colors.Black };
         el.Opacity = 0.96;
         panel.CaptureMouse();
@@ -117,6 +125,7 @@ sealed class LiveReorder
         var items = Items;
         int from = items.IndexOf(item);
         if (from < 0) { End(); return; }
+        if (Wrap) { DragWrapped(items, from, pointer); return; }
         // Where the carried item's middle is now, against the middles of the others
         double centre = Along(pointer) - grab + Length(item) / 2;
         int to = items.Where(o => o != item).Count(o => Start(o) + Length(o) / 2 < centre);
@@ -148,6 +157,40 @@ sealed class LiveReorder
         t.SetValue(AlongProp, Along(pointer) - grab - Start(item));
     }
 
+    void DragWrapped(List<FrameworkElement> items, int from, Point pointer)
+    {
+        var centre = new Point(pointer.X - grab2.X + Slot(item!).Width / 2, pointer.Y - grab2.Y + Slot(item).Height / 2);
+        // The place whose middle is nearest (its own counts too, so it stays put until it is clearly closer to another)
+        int to = items.Select((o, i) => (i, d: (Mid(o) - centre).LengthSquared)).OrderBy(x => x.d).First().i;
+        if (to != from)
+        {
+            var before = items.ToDictionary(o => o, o => new Point(Slot(o).X + PartsOf(o).Move.X, Slot(o).Y + PartsOf(o).Move.Y));
+            if (move != null) move(item, from, to);
+            else
+            {
+                panel.Children.Remove(item);
+                var others = items.Where(o => o != item).ToList();
+                int at = to < others.Count ? panel.Children.IndexOf(others[to]) : panel.Children.IndexOf(others[^1]) + 1;
+                panel.Children.Insert(at, item);
+            }
+            panel.UpdateLayout();
+            var now = Items;
+            if (to < now.Count && now[to] != item) item = now[to];
+            foreach (var o in now)
+            {
+                if (o == item || !before.TryGetValue(o, out var was)) continue;
+                var s = Slot(o);
+                if (Math.Abs(was.X - s.X) > 0.5) Animate(PartsOf(o).Move, TranslateTransform.XProperty, 0, 220, was.X - s.X);
+                if (Math.Abs(was.Y - s.Y) > 0.5) Animate(PartsOf(o).Move, TranslateTransform.YProperty, 0, 220, was.Y - s.Y);
+            }
+        }
+        var t = PartsOf(item).Move;
+        t.BeginAnimation(TranslateTransform.XProperty, null);
+        t.BeginAnimation(TranslateTransform.YProperty, null);
+        t.X = pointer.X - grab2.X - Slot(item).X;
+        t.Y = pointer.Y - grab2.Y - Slot(item).Y;
+    }
+
     /// <summary>Dev check: where an item's transforms are now.</summary>
     public static string Probe(FrameworkElement el) => parts.TryGetValue(el, out var p)
         ? $"x={p.Move.X:0.0} y={p.Move.Y:0.0} scale={p.Scale.ScaleX:0.00} group={(el.RenderTransform == p.Group)} z={Panel.GetZIndex(el)} fx={(el.Effect != null)}"
@@ -162,8 +205,16 @@ sealed class LiveReorder
         bool changed = Items.IndexOf(el) != startIndex;
         // Settle into place
         var p = PartsOf(el);
-        Animate(p.Move, AlongProp, 0, 220, MovedAlong(p.Move));
-        Animate(p.Move, AcrossProp, 0, 220);
+        if (Wrap)
+        {
+            Animate(p.Move, TranslateTransform.XProperty, 0, 220, p.Move.X);
+            Animate(p.Move, TranslateTransform.YProperty, 0, 220, p.Move.Y);
+        }
+        else
+        {
+            Animate(p.Move, AlongProp, 0, 220, MovedAlong(p.Move));
+            Animate(p.Move, AcrossProp, 0, 220);
+        }
         Animate(p.Scale, ScaleTransform.ScaleXProperty, 1, 220);
         var settle = new DoubleAnimation(1, TimeSpan.FromMilliseconds(220)) { EasingFunction = Ease };
         settle.Completed += (_, _) => { if (item != el) { el.Effect = null; Panel.SetZIndex(el, 0); } };

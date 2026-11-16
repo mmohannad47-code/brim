@@ -361,6 +361,56 @@ public sealed class TrayService : IDisposable
         }, IntPtr.Zero);
     }
 
+    static string ExeOf(TrayIconItem icon)
+    {
+        uint pid = icon.Pid;
+        if (pid == 0) Native.GetWindowThreadProcessId(new IntPtr(icon.HWnd), out pid);
+        return System.IO.Path.GetFileName(Native.ProcessPath(pid) ?? "").ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Icons of Windows' own that only ever talk to Windows' tray: what clicking them does, done directly.
+    /// </summary>
+    static bool KnownAction(TrayIconItem icon)
+    {
+        string? open = ExeOf(icon) switch
+        {
+            "securityhealthsystray.exe" => "windowsdefender:", // Windows Security
+            _ => null,
+        };
+        if (open == null) return false;
+        Brim.Views.Flyout.CloseOpen();
+        Log.Note("tray", $"'{icon.Tip.Split('\n')[0]}': opening {open} (it only talks to Windows' own tray)");
+        Launcher.Open(open);
+        return true;
+    }
+
+    /// <summary>The app behind the icon has a window: bring it up.</summary>
+    static bool OwnWindow(TrayIconItem icon)
+    {
+        uint pid = icon.Pid;
+        if (pid == 0) Native.GetWindowThreadProcessId(new IntPtr(icon.HWnd), out pid);
+        if (pid == 0 || pid == Environment.ProcessId) return false;
+        IntPtr main = IntPtr.Zero;
+        Native.EnumWindows((h, _) =>
+        {
+            Native.GetWindowThreadProcessId(h, out uint p);
+            if (p != pid || Native.TitleOf(h).Length == 0 || Native.GetWindow(h, 4 /* GW_OWNER */) != IntPtr.Zero) return true;
+            long ex = Native.GetWindowLongPtr(h, Native.GWL_EXSTYLE).ToInt64();
+            if ((ex & Native.WS_EX_TOOLWINDOW) != 0) return true;
+            // A visible window first; a hidden main window (an app tucked into the tray) as a last resort is not shown,
+            // because showing a window an app hid can leave it half-drawn
+            if (!Native.IsWindowVisible(h)) return true;
+            main = h;
+            return false;
+        }, IntPtr.Zero);
+        if (main == IntPtr.Zero) return false;
+        Brim.Views.Flyout.CloseOpen();
+        Log.Note("tray", $"'{icon.Tip.Split('\n')[0]}': bringing up its window '{Native.TitleOf(main)}'");
+        Native.ForceForeground(main);
+        return true;
+    }
+
     /// <summary>Pass a click on to the app that owns the icon, the way Explorer would.</summary>
     public static async void Click(TrayIconItem icon, bool right, bool doubleClick = false)
     {
@@ -368,6 +418,8 @@ public sealed class TrayService : IDisposable
         if (!Native.IsWindow(owner)) { Instance?.Icons.Remove(icon); return; }
         if (icon.Callback == 0)
         {
+            // Apps Brim knows the answer for (Windows Security never registers again): straight there
+            if (KnownAction(icon)) return;
             // Still don't know which message this app wants: ask it to register again and wait a moment for it
             AskToRegisterAgain(icon);
             for (int i = 0; i < 12 && icon.Callback == 0; i++)
@@ -378,7 +430,10 @@ public sealed class TrayService : IDisposable
             Log.Note("tray", icon.Callback == 0 ? $"'{icon.Tip}' never said which message it wants: showing Windows' taskbar, where it can be clicked" : $"'{icon.Tip}' registered again: message 0x{icon.Callback:X}");
             if (icon.Callback == 0)
             {
+                // An app with a window of its own: bring that up (what clicking its icon nearly always does)
+                if (OwnWindow(icon)) return;
                 // This app only talks to Windows' own tray: bring that up for a moment so the icon can be clicked there
+                // (the dock steps aside meanwhile, or it would sit on top of it)
                 Brim.Views.Flyout.CloseOpen();
                 TaskbarManager.Peek();
                 return;

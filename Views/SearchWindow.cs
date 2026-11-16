@@ -189,21 +189,13 @@ public sealed class SearchWindow : Window
 
     // ------------------------------------------------------------------ sources
 
-    static readonly (string name, string uri, string glyph)[] SettingsPages =
+    /// <summary>Open a setting from the index: a Windows settings page, a tool (program|arguments), or Brim's own settings.</summary>
+    static void OpenSetting(SettingsIndex.Entry e)
     {
-        ("Wi-Fi settings", "ms-settings:network-wifi", ""), ("Bluetooth & devices", "ms-settings:bluetooth", ""),
-        ("Display settings", "ms-settings:display", ""), ("Sound settings", "ms-settings:sound", ""),
-        ("Apps & features", "ms-settings:appsfeatures", ""), ("Default apps", "ms-settings:defaultapps", ""),
-        ("Power & battery", "ms-settings:powersleep", ""), ("Storage", "ms-settings:storagesense", ""),
-        ("Background / wallpaper", "ms-settings:personalization-background", ""), ("Colours", "ms-settings:colors", ""),
-        ("Themes", "ms-settings:themes", ""), ("Taskbar settings", "ms-settings:taskbar", ""),
-        ("Windows Update", "ms-settings:windowsupdate", ""), ("Privacy & security", "ms-settings:privacy", ""),
-        ("Mouse settings", "ms-settings:mousetouchpad", ""), ("Touchpad settings", "ms-settings:devices-touchpad", ""),
-        ("Keyboard settings", "ms-settings:keyboard", ""), ("Date & time", "ms-settings:dateandtime", ""),
-        ("Notifications", "ms-settings:notifications", ""), ("Night light", "ms-settings:nightlight", ""),
-        ("About this PC", "ms-settings:about", ""), ("Mobile hotspot", "ms-settings:network-mobilehotspot", ""),
-        ("VPN", "ms-settings:network-vpn", ""), ("Gaming / Game Mode", "ms-settings:gaming-gamemode", ""),
-    };
+        if (e.IsBrim) { ((App)Application.Current).OpenSettings(e.Target[5..]); return; }
+        var parts = e.Target.Split('|', 2);
+        Launcher.Open(parts[0], parts.Length > 1 ? parts[1] : null);
+    }
 
     List<(string name, string kind, string? glyph, Func<ImageSource?>? icon, Action run, string? detail)> BrimActions()
     {
@@ -324,10 +316,11 @@ public sealed class SearchWindow : Window
             int s = Score(name, q);
             if (s > 0) found.Add((s + 5, new SearchResult(name, "App", "", () => AppIcon(target), () => OpenApp(target))));
         }
-        foreach (var (name, uri, glyph) in SettingsPages)
+        // Settings, by the words people type ("refresh rate", "pin", "sticky keys"), and Brim's own
+        foreach (var e in SettingsIndex.All)
         {
-            int s = Score(name, q);
-            if (s > 0) found.Add((s, new SearchResult(name, "Settings", glyph, null, () => Launcher.Open(uri))));
+            int s = SettingsIndex.Match(e, q);
+            if (s > 0) found.Add((s + 4, new SearchResult(e.Name, e.IsBrim ? "Brim" : "Setting", e.IsBrim ? "" : "", null, () => OpenSetting(e), e.Where)));
         }
         foreach (var a in BrimActions())
         {
@@ -343,7 +336,7 @@ public sealed class SearchWindow : Window
             }
 
         var top = found.OrderByDescending(f => f.score).Select(f => f.r)
-            .GroupBy(r => r.Kind + "|" + r.Name).Select(g => g.First()).Take(8).ToList();
+            .GroupBy(r => r.Kind + "|" + r.Name).Select(g => g.First()).Take(10).ToList();
         top.Add(new SearchResult($"Search the web for “{q}”", "Web", "", null,
             () => Launcher.Open("https://www.google.com/search?q=" + Uri.EscapeDataString(q))));
         return top;

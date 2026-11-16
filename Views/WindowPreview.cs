@@ -95,11 +95,14 @@ public sealed class WindowPreview : Window
 
             // Windows draws the live picture into this area, shaped like the window (tall ones like a friends list
             // get a tall preview instead of a thin strip in a wide box)
-            var slot = new Border { Width = sw, Height = sh };
+            // (see-through but there for the pointer: peek starts over the picture, not over the title or its close button)
+            var slot = new Border { Width = sw, Height = sh, Background = Brushes.Transparent };
+            slot.MouseEnter += (_, _) => PeekSoon(win.Hwnd);
+            slot.MouseLeave += (_, _) => EndPeek();
             stack.Children.Add(slot);
 
             card.Child = stack;
-            card.MouseEnter += (_, _) => { card.SetResourceReference(Border.BackgroundProperty, "Brim.Hover"); PeekSoon(win.Hwnd); };
+            card.MouseEnter += (_, _) => card.SetResourceReference(Border.BackgroundProperty, "Brim.Hover");
             card.MouseLeave += (_, _) => { card.Background = Brushes.Transparent; EndPeek(); };
             card.MouseLeftButtonUp += (_, e) =>
             {
@@ -143,7 +146,7 @@ public sealed class WindowPreview : Window
 
     void PeekSoon(IntPtr target)
     {
-        if (peekBroken || Native.IsIconic(target)) return; // a minimised window has nothing to show in place
+        if (peekBroken) return; // (minimised windows too: Windows shows the last picture of them, where they open)
         peekTarget = target;
         peekDelay.Stop();
         peekDelay.Tick -= PeekNow;
@@ -158,7 +161,8 @@ public sealed class WindowPreview : Window
         try
         {
             // The preview itself stays on top, so you can move on to the next window or click this one
-            DwmpActivateLivePreview(1, peekTarget, hwnd, 1, IntPtr.Zero);
+            int hr = DwmpActivateLivePreview(1, peekTarget, hwnd, 1, IntPtr.Zero);
+            if (hr != 0) Log.Note("preview", $"Windows wouldn't peek at '{Native.TitleOf(peekTarget)}' ({Native.ClassOf(peekTarget)}): 0x{hr:X8}");
             peeking = true;
         }
         catch (Exception ex) { peekBroken = true; Log.Note("preview", "peek isn't available on this Windows: " + ex.Message); }

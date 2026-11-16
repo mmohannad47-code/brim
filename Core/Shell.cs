@@ -11,7 +11,7 @@ namespace Brim.Core;
 public static class TaskbarManager
 {
     static TaskbarMode applied = TaskbarMode.Windows;
-    static DateTime peekUntil;
+    static DateTime peekUntil, switchingAt;
     static IntPtr lastPrimary;
 
     static IntPtr Primary => Native.ExplorerTray();
@@ -102,6 +102,10 @@ public static class TaskbarManager
         }
         if (applied != TaskbarMode.Dock) return;
         if (DateTime.Now < peekUntil) return;
+        // Alt+Tab, Task View or a swipe in progress (and a moment after): leave Windows' taskbar alone. Windows brings it
+        // up as part of switching, out of a fullscreen game too, and hiding it mid-switch could leave you stuck in the app.
+        if (Native.SwitcherInFront()) { switchingAt = DateTime.Now; return; }
+        if (DateTime.Now - switchingAt < TimeSpan.FromSeconds(1)) return;
         // Explorer brings its taskbar back for Start and some shortcuts; with the dock on, it always goes again.
         // Every screen's bar, not just the main one: Explorer also re-shows the other screens' bars on their own
         // (when the dock's strip or auto-hide changes there), and those used to stay up
@@ -112,10 +116,14 @@ public static class TaskbarManager
     }
 
     /// <summary>Bring the real taskbar up for a moment, e.g. to reach tray icons.</summary>
+    /// <summary>Windows' taskbar is up for a moment (for this long): the dock steps aside so it can be clicked.</summary>
+    public static event Action<TimeSpan>? Peeking;
+
     public static void Peek()
     {
         if (applied != TaskbarMode.Dock) return;
         peekUntil = DateTime.Now.AddSeconds(8);
+        Peeking?.Invoke(TimeSpan.FromSeconds(8));
         SetVisible(true);
         Native.TapKeys(Native.VK_LWIN, (byte)'B'); // Win+B: reveal the auto-hidden bar with focus on the tray
     }
