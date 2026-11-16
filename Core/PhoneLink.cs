@@ -31,7 +31,7 @@ public static class PhoneLink
     static TcpListener? listener;
     static CancellationTokenSource? cts;
     static System.Windows.Threading.DispatcherTimer? idleTimer;
-    static DateTime lastUse;
+    static DateTime lastUse, lastTlsNote;
     static string key = "";
     static volatile (string id, string path)[] offered = Array.Empty<(string, string)>();
     static readonly List<Post> posts = new();
@@ -258,6 +258,19 @@ public static class PhoneLink
             timeout.CancelAfter(TimeSpan.FromSeconds(20));
             var req = await ReadHead(s, timeout.Token);
             if (req == null) return;
+            if (req.Method == "TLS")
+            {
+                // Say no straight away (a TLS "protocol version" alert) so the browser drops back to http at once,
+                // instead of waiting on a secure answer that never comes (Chrome then shows ERR_TOO_MANY_RETRIES)
+                if (DateTime.Now - lastTlsNote > TimeSpan.FromMinutes(1))
+                {
+                    lastTlsNote = DateTime.Now;
+                    Log.Note("phone", $"{ep.Address} tried a secure (https) connection; told it to use http");
+                }
+                await s.WriteAsync(new byte[] { 0x15, 0x03, 0x01, 0x00, 0x02, 0x02, 0x46 }, timeout.Token);
+                c.Client.LingerState = new LingerOption(true, 0);
+                return;
+            }
 
             if (!Authorised(req))
             {
@@ -325,6 +338,8 @@ public static class PhoneLink
             if (n == buf.Length) return null; // headers too big
             int got = await s.ReadAsync(buf.AsMemory(n), ct);
             if (got == 0) return null;
+            // A secure (https) hello instead of a request: Chrome's "Always use secure connections" tries https first
+            if (n == 0 && buf[0] == 0x16) return new Request { Method = "TLS" };
             n += got;
             for (int i = Math.Max(0, n - got - 3); i + 3 < n; i++)
                 if (buf[i] == '\r' && buf[i + 1] == '\n' && buf[i + 2] == '\r' && buf[i + 3] == '\n') { end = i; break; }

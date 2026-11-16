@@ -623,6 +623,19 @@ public partial class App : Application
                             sb.AppendLine($"no key: {(int)(await Get("/")).StatusCode}   wrong key: {(int)(await Get("/?k=nope")).StatusCode}");
                             var page = await Get("/?" + k);
                             sb.AppendLine($"page: {(int)page.StatusCode}, mentions this PC: {(await page.Content.ReadAsStringAsync()).Contains(Environment.MachineName)}");
+                            {
+                                // A browser trying https first (Chrome's "Always use secure connections") gets a quick no, not silence
+                                var tlsWatch = System.Diagnostics.Stopwatch.StartNew();
+                                using var tls = new System.Net.Sockets.TcpClient();
+                                await tls.ConnectAsync("127.0.0.1", uri.Port);
+                                var ts = tls.GetStream();
+                                await ts.WriteAsync(new byte[] { 0x16, 0x03, 0x01, 0x00, 0x05, 0x01, 0x00, 0x00, 0x01, 0x00 });
+                                var answer = new byte[16];
+                                using var tlsWait = new System.Threading.CancellationTokenSource(3000);
+                                int an = 0;
+                                try { an = await ts.ReadAsync(answer, tlsWait.Token); } catch (Exception ex) { sb.AppendLine($"https try: {ex.GetType().Name}"); }
+                                sb.AppendLine($"https try: answered {an} bytes (first 0x{answer[0]:X2}, alert {answer[6]}) in {tlsWatch.ElapsedMilliseconds} ms");
+                            }
                             Shelf.Add(new[] { photo, folder });
                             await System.Threading.Tasks.Task.Delay(100);
                             PhoneLink.SendText("https://example.com/some/page");
