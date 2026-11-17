@@ -403,7 +403,7 @@ public sealed class QuickPanel : StackPanel
     readonly StackPanel devices = new() { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 4, 0, 0) };
     readonly TextBlock footer = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(2) };
-    bool updating, draggingBrightness;
+    bool updating;
 
     public QuickPanel(bool compact)
     {
@@ -462,8 +462,6 @@ public sealed class QuickPanel : StackPanel
         brightness.SetResourceReference(StyleProperty, "BrimSlider");
         brightness.VerticalAlignment = VerticalAlignment.Center;
         brightness.Margin = new Thickness(8, 0, compact ? 8 : 40, 0);
-        brightness.PreviewMouseDown += (_, _) => draggingBrightness = true;
-        brightness.PreviewMouseUp += (_, _) => draggingBrightness = false;
         brightness.ValueChanged += (_, e) => { if (!updating) Brightness.Set((int)e.NewValue); };
         Grid.SetColumn(brightness, 1);
         brightnessRow.Children.Add(brightness);
@@ -482,8 +480,16 @@ public sealed class QuickPanel : StackPanel
         }
 
         timer.Tick += (_, _) => Refresh();
-        Loaded += (_, _) => { Refresh(); timer.Start(); };
-        Unloaded += (_, _) => timer.Stop();
+        Loaded += (_, _) => { Refresh(); timer.Start(); Brightness.Changed += ShowBrightness; };
+        Unloaded += (_, _) => { timer.Stop(); Brightness.Changed -= ShowBrightness; };
+    }
+
+    /// <summary>Follow the screen's brightness at once (keys, Windows' slider), not on the next refresh.</summary>
+    void ShowBrightness(int v)
+    {
+        brightnessRow.Visibility = Visibility.Visible;
+        if (brightness.IsMouseCaptureWithin) return;
+        updating = true; brightness.Value = v; updating = false;
     }
 
     /// <summary>Windows' own Bluetooth panel: your devices (click to connect) and "More Bluetooth settings".</summary>
@@ -526,11 +532,11 @@ public sealed class QuickPanel : StackPanel
         updating = false;
         UpdateMuteGlyph();
 
-        if (!draggingBrightness)
+        if (!brightness.IsMouseCaptureWithin)
         {
             var b = await Brightness.Read();
-            brightnessRow.Visibility = b == null ? Visibility.Collapsed : Visibility.Visible;
-            if (b != null) { updating = true; brightness.Value = b.Value; updating = false; }
+            if (b is int v) ShowBrightness(v);
+            else brightnessRow.Visibility = Visibility.Collapsed;
         }
 
         footer.Text = SystemInfo.HasBattery

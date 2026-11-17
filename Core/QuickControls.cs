@@ -73,6 +73,44 @@ public static class Brightness
     static bool? available;
     static int pending = -1;
     static int writing;
+    static ManagementEventWatcher? watcher;
+    static Action<int>? changed;
+
+    /// <summary>
+    /// The screen's brightness changed (keyboard keys, Windows' own slider, auto-brightness, or Brim). Raised on the UI
+    /// thread. Windows tells us through WMI, so nothing polls; the watcher runs only while something is listening.
+    /// </summary>
+    public static event Action<int> Changed
+    {
+        add
+        {
+            changed += value;
+            if (watcher != null || available == false) return;
+            try
+            {
+                var w = new ManagementEventWatcher(new ManagementScope(@"root\WMI"), new EventQuery("SELECT * FROM WmiMonitorBrightnessEvent"));
+                w.EventArrived += (_, e) =>
+                {
+                    try
+                    {
+                        int v = Convert.ToInt32(e.NewEvent["Brightness"]);
+                        System.Windows.Application.Current?.Dispatcher.BeginInvoke(() => changed?.Invoke(v));
+                    }
+                    catch { }
+                };
+                w.Start();
+                watcher = w;
+            }
+            catch (Exception ex) { Log.Error("brightness watch", ex); }
+        }
+        remove
+        {
+            changed -= value;
+            if (changed != null || watcher == null) return;
+            try { watcher.Stop(); watcher.Dispose(); } catch { }
+            watcher = null;
+        }
+    }
 
     public static async Task<int?> Read()
     {
@@ -87,9 +125,9 @@ public static class Brightness
                     available = true;
                     return Convert.ToInt32(o["CurrentBrightness"]);
                 }
+                available ??= false; // no built-in screen; a hiccup once it has worked doesn't hide the slider for good
             }
             catch { }
-            available = false;
             return null;
         });
     }

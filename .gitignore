@@ -11,3 +11,6 @@ dist/
 
 # Private: the API keys built into family & friends releases. Never commit this.
 Core/ApiKeys.Local.cs
+
+# Release build output
+publish/

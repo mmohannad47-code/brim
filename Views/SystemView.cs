@@ -99,11 +99,19 @@ sealed class SystemView : Grid
         Loaded += async (_, _) =>
         {
             App.SecondTick += Tick;
+            Brightness.Changed += ShowBrightness;
             Refresh();
-            var b = await Brightness.Read();
-            if (b is int v) { updating = true; bright.Value = v; brightText.Text = $"{v}%"; updating = false; brightRow.Visibility = Visibility.Visible; }
+            if (await Brightness.Read() is int v) ShowBrightness(v);
         };
-        Unloaded += (_, _) => App.SecondTick -= Tick;
+        Unloaded += (_, _) => { App.SecondTick -= Tick; Brightness.Changed -= ShowBrightness; };
+    }
+
+    /// <summary>Follow the screen's brightness, however it was changed (not while the slider is being dragged).</summary>
+    void ShowBrightness(int v)
+    {
+        brightRow.Visibility = Visibility.Visible;
+        if (bright.IsMouseCaptureWithin) return;
+        updating = true; bright.Value = v; brightText.Text = $"{v}%"; updating = false;
     }
 
     void Add(UIElement el, int row, int col) { SetRow(el, row); SetColumn(el, col); Children.Add(el); }
