@@ -32,6 +32,9 @@ header{display:flex;align-items:center;gap:10px;margin:4px 2px 16px}
 header h1{font-size:22px;margin:0;font-weight:650;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none}
 .dot.off{background:var(--bad)}
+.logo{width:30px;height:30px;flex:none}
+.status{display:inline-flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 10px 5px 9px;flex:none}
+.dot{width:7px;height:7px}
 #conn{font-size:13px;color:var(--dim)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px}
 .card h2{font-size:15px;margin:0 0 4px;font-weight:650}
@@ -69,7 +72,7 @@ button.small{padding:6px 12px;font-size:13.5px;border-radius:10px}
 </style>
 </head>
 <body>
-<header><span class="dot" id="dot"></span><h1>{{PC}}</h1><span id="conn">Connected</span></header>
+<header><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="#ff8fab"/><stop offset="1" stop-color="#ffb38a"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="16" fill="#16161b"/><circle cx="32" cy="34" r="17" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="7"/><path d="M17.3 26A17 17 0 0 1 46.7 26" fill="none" stroke="url(#lg)" stroke-width="7" stroke-linecap="round"/></svg><h1>{{PC}}</h1><span class="status"><span class="dot" id="dot"></span><span id="conn">Connected</span></span></header>
 
 <section class="card">
   <h2>Send to PC</h2>

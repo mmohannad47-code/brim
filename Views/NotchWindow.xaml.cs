@@ -49,7 +49,21 @@ public partial class NotchWindow : Window
     Size lastClosed;
     IntPtr hwnd;
 
-    const double OpenW = 580, OpenH = 244;
+    const double OpenW = 580, OpenH = 258;
+    /// <summary>How big the open notch is for the tab showing: most fit the usual size, a few need more room.</summary>
+    Size OpenSize => TabSystem?.IsChecked == true ? new Size(OpenW, 434) : TabPhone?.IsChecked == true ? new Size(OpenW, 392)
+        : TabDocs?.IsChecked == true ? new Size(OpenW, 364)
+        : TabMsgs?.IsChecked == true ? new Size(OpenW, 382) : new Size(OpenW, OpenH);
+    PhoneView? phoneView;
+
+    /// <summary>Open on one of your tabs (false when it's hidden, or the notch is away for a fullscreen app).</summary>
+    public bool OpenTab(string id)
+    {
+        if (fullscreenHidden || TabFor(id) is not { Parent: not null } tab) return false;
+        Open(tab);
+        return true;
+    }
+    double OpenRadius => S.Shape == NotchShape.Island ? 30 : 26;
 
     static AppSettings S => SettingsStore.Current;
     static MediaService M => MediaService.Instance;
@@ -64,7 +78,7 @@ public partial class NotchWindow : Window
         set => SetValue(RadiusProperty, value);
     }
 
-    double SpeedMs => S.Speed switch { "Quick" => 220, "Relaxed" => 560, _ => 380 };
+    double SpeedMs => S.Speed switch { "Quick" => 170, "Relaxed" => 400, _ => 250 };
 
     /// <summary>Notches on the other screens ("Every screen"): they show what the main one shows.</summary>
     public static readonly List<NotchWindow> Mirrors = new();
@@ -80,6 +94,9 @@ public partial class NotchWindow : Window
     public NotchWindow()
     {
         InitializeComponent();
+        // On the cards, pills, keys and the selected tab take a lighter shade so they stand out from the card
+        foreach (var onCard in new FrameworkElement[] { HeaderBar, HomePanel, AppsPanel, ShelfPanel, ClipPanel, CtrlPanel, TimerPanel, CalcPanel, PhonePanel })
+            Cards.Lift(onCard);
         // Clicking anywhere on these bars jumps there (by default a click only nudges by a step)
         Progress.IsMoveToPointEnabled = true;
         VolumeSlider.IsMoveToPointEnabled = true;
@@ -97,7 +114,7 @@ public partial class NotchWindow : Window
 
         HoverMenu.SetRegion(this, Body); // its menus stay while the pointer is on the notch's card or the menu
         hoverTimer.Tick += (_, _) => { hoverTimer.Stop(); Open(); };
-        leaveTimer.Interval = TimeSpan.FromMilliseconds(320);
+        leaveTimer.Interval = TimeSpan.FromMilliseconds(90); // off it and it's closing almost at once
         leaveTimer.Tick += (_, _) =>
         {
             leaveTimer.Stop();
@@ -243,6 +260,9 @@ public partial class NotchWindow : Window
             (TabTimer, "Focus timer"),
             (TabNotes, "Notes · type anything, it saves by itself"),
             (TabCalc, "Calculator · type a sum or tap the keys"),
+            (TabSystem, "System · CPU, memory, network, storage"),
+            (TabPhone, "Phone · swap files, photos and links"),
+            (TabDocs, "Docs · Word to PDF, PDF to Word, edit PDFs"),
         })
         {
             tab.ToolTip = null;
@@ -339,6 +359,7 @@ public partial class NotchWindow : Window
             Body.Background = Brushes.Black;
             FaceText.Effect = null;
             Body.BorderThickness = new Thickness(0);
+            Clearer(false);
             return;
         }
         // Your own colour for the closed notch (the open one keeps the theme's)
@@ -350,6 +371,7 @@ public partial class NotchWindow : Window
             else Body.SetResourceReference(Border.BackgroundProperty, "Brim.Surface");
             FaceText.Effect = null;
             Body.BorderThickness = new Thickness(0);
+            Clearer(false);
             return;
         }
         if (ClearAndClosed)
@@ -358,17 +380,46 @@ public partial class NotchWindow : Window
             Body.Background = new SolidColorBrush(Color.FromArgb(2, 0, 0, 0));
             Body.BorderThickness = new Thickness(0);
             FaceText.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 8, ShadowDepth = 0, Opacity = 0.9, Color = Colors.Black };
+            Clearer(false);
         }
         else
         {
             var c = own ?? ThemeManager.Parse(ThemeManager.Current.Surface);
-            Body.Background = Backdrop.Glass(c, own != null ? (byte)0x80 : (byte)0x30, litFromBelow: true);
-            // The lit edge of the glass: sides and bottom (the top is the screen edge)
-            Body.BorderBrush = Backdrop.Available ? Backdrop.Rim(litFromBelow: true) : null;
-            Body.BorderThickness = Backdrop.Available ? new Thickness(1, 0, 1, 1) : new Thickness(0);
+            bool crystal = Crystal;
+            byte alpha = crystal ? (own != null ? (byte)0x48 : (byte)0x12) : (own != null ? (byte)0x80 : (byte)0x30);
+            Body.Background = Backdrop.Glass(c, alpha, litFromBelow: true);
+            Body.BorderThickness = new Thickness(0);
             FaceText.Effect = null;
+            Clearer(crystal);
         }
         SyncBackdrop();
+    }
+
+    bool Crystal => S.NotchSurface is "Crystal" or "Clear"; // (Clear opens as clear glass too)
+
+    /// <summary>
+    /// Crystal: the glass is nearly clear, so a frosted rim covers the thin strip along the sides and bottom that the
+    /// blur doesn't reach (the top is the screen edge), and text and icons get a soft shadow to stay readable.
+    /// </summary>
+    void Clearer(bool on)
+    {
+        clearer = on;
+        FitEdge();
+        // (open, everything sits on cards; closed, the clock and song sit on the glass itself)
+        ClosedView.Effect = on ? ClosedView.Effect ?? Backdrop.TextLift() : null;
+    }
+
+    bool clearer;
+
+    /// <summary>The frosted rim's width follows the corners (rounder corners leave a wider strip the blur misses).</summary>
+    void FitEdge()
+    {
+        double band = 0;
+        if (clearer && PresentationSource.FromVisual(Body)?.CompositionTarget is { } ct)
+            band = Backdrop.EdgeBand(Math.Max(0, Radius), ct.TransformToDevice.M11);
+        bool island = S.Shape == NotchShape.Island;
+        Edge.BorderThickness = band <= 0 ? new Thickness(0) : island ? new Thickness(band) : new Thickness(band, 0, band, band);
+        Edge.BorderBrush = band > 0 ? Backdrop.CrystalEdge(litFromBelow: !island) : null;
     }
 
     /// <summary>Dark text on a light notch colour, so the song, clock and pop-ups stay readable.</summary>
@@ -470,16 +521,16 @@ public partial class NotchWindow : Window
         "Messages" => TabMsgs,
         "Notes" => TabNotes,
         "Calc" => TabCalc,
-        _ => TabHome,
+        _ => TabFor(tab) ?? TabHome,
     });
 
     RadioButton? TabFor(string id) => id switch
     {
         "Home" => TabHome, "Apps" => TabApps, "Games" => TabGames, "Messages" => TabMsgs, "Shelf" => TabShelf,
-        "Clip" => TabClip, "Ctrl" => TabCtrl, "Timer" => TabTimer, "Notes" => TabNotes, "Calc" => TabCalc, _ => null,
+        "Clip" => TabClip, "Ctrl" => TabCtrl, "Timer" => TabTimer, "Notes" => TabNotes, "Calc" => TabCalc, "System" => TabSystem, "Phone" => TabPhone, "Docs" => TabDocs, _ => null,
     };
 
-    IEnumerable<RadioButton> AllTabs => new[] { TabHome, TabApps, TabGames, TabMsgs, TabNotes, TabCalc, TabShelf, TabClip, TabCtrl, TabTimer };
+    IEnumerable<RadioButton> AllTabs => new[] { TabHome, TabApps, TabGames, TabMsgs, TabNotes, TabCalc, TabShelf, TabClip, TabCtrl, TabSystem, TabPhone, TabDocs, TabTimer };
 
     /// <summary>The first tab you kept (where the notch opens when Home is hidden).</summary>
     RadioButton FirstTab => S.NotchTabs.Select(TabFor).FirstOrDefault(t => t != null) ?? TabHome;
@@ -492,7 +543,7 @@ public partial class NotchWindow : Window
         if (TabsRow.Children.Cast<RadioButton>().SequenceEqual(wanted)) return;
         TabsRow.Children.Clear();
         // Narrower buttons when there are many, so the battery and clock beside them keep their room
-        double w = wanted.Count <= 7 ? 40 : wanted.Count == 8 ? 37 : 33;
+        double w = wanted.Count <= 7 ? 40 : wanted.Count == 8 ? 37 : wanted.Count <= 10 ? 34 : 31;
         foreach (var t in wanted) { t.Width = w; TabsRow.Children.Add(t); }
         foreach (var t in AllTabs.Except(wanted)) t.IsChecked = false;
         if (!wanted.Any(t => t.IsChecked == true)) wanted[0].IsChecked = true;
@@ -505,6 +556,9 @@ public partial class NotchWindow : Window
         var items = S.HomeItems;
         bool music = items.Contains("Music");
         MusicArea.Visibility = music ? Visibility.Visible : Visibility.Collapsed;
+        MusicCard.Visibility = MusicArea.Visibility;
+        Grid.SetColumn(GlanceCard, music ? 2 : 0);
+        Grid.SetColumnSpan(GlanceCard, music ? 1 : 3);
         Grid.SetColumn(GlanceScroll, music ? 2 : 0);
         Grid.SetColumnSpan(GlanceScroll, music ? 1 : 3);
         Grid.SetColumn(GlanceDots, music ? 2 : 0);
@@ -524,7 +578,7 @@ public partial class NotchWindow : Window
         foreach (var (_, el) in blocks) el.Tag ??= el.Margin; // remember the designed spacing
         Glance.Children.Clear();
         // Beside the music: one narrow column. On its own: two columns across the card.
-        const double narrow = 140, wide = 255, gutter = 30;
+        const double narrow = 140, wide = 243, gutter = 30; // (inside the card's padding)
         int index = 0;
         foreach (var id in items)
         {
@@ -539,6 +593,7 @@ public partial class NotchWindow : Window
             Glance.Children.Add(el);
             index++;
         }
+        GlanceCard.Visibility = index > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (mode == Mode.Open) RefreshOpen();
         // As many parts as you like: they're shared out into pages once they're laid out
         Dispatcher.BeginInvoke(new Action(BuildGlancePages), DispatcherPriority.Loaded);
@@ -755,6 +810,9 @@ public partial class NotchWindow : Window
         var cr = S.Shape == NotchShape.Notch ? new CornerRadius(0, 0, r, r) : new CornerRadius(r);
         Body.CornerRadius = cr;
         Tint.CornerRadius = cr;
+        Veil.CornerRadius = cr;
+        Edge.CornerRadius = cr;
+        if (clearer) FitEdge();
         SyncBackdrop();
     }
 
@@ -776,26 +834,42 @@ public partial class NotchWindow : Window
     {
         Log.Trace($"notch: animating to {to.Width:0}x{to.Height:0}");
         var dur = new Duration(TimeSpan.FromMilliseconds(ms));
+        // One smooth ease, no overshoot: quick off the mark and settling softly (growing), or a plain glide (shrinking)
         IEasingFunction ease = bouncy
-            ? new BackEase { Amplitude = 0.22, EasingMode = EasingMode.EaseOut }
+            ? new QuarticEase { EasingMode = EasingMode.EaseOut }
             : new CubicEase { EasingMode = EasingMode.EaseOut };
         // Glass while it grows or shrinks: the blur layer is a separate window, and moving and re-blurring it on every
-        // frame made the animation stutter (most of all on 60 Hz screens). It steps away meanwhile, the notch is a
-        // near-solid tint, and the blur comes back the moment it settles.
+        // frame made the animation stutter (most of all on 60 Hz screens). It steps away meanwhile and a veil in the
+        // glass's colour covers the notch; once it settles the blur comes back and the veil fades off it, so it reads
+        // as one surface turning to glass rather than a second window popping in.
         int gen = ++bodyGen;
-        if (S.NotchSurface != "Solid" && !ClearAndClosed && !(HideMode && sliverSettled))
+        var surface = (mode != Mode.Open && S.NotchColor != null ? ThemeManager.Parse(S.NotchColor) : (Color?)null)
+                      ?? ThemeManager.Parse(ThemeManager.Current.Surface);
+        bool glass = S.NotchSurface != "Solid" && !(HideMode && sliverSettled);
+        Veil.BeginAnimation(OpacityProperty, null);
+        if (glass && !ClearAndClosed)
         {
             bodyAnimating = true;
             backdrop?.Hide();
-            Color? own = mode != Mode.Open && S.NotchColor != null ? ThemeManager.Parse(S.NotchColor) : null;
-            Body.Background = new SolidColorBrush(Backdrop.Tint(own ?? ThemeManager.Parse(ThemeManager.Current.Surface), 0xE6));
+            Veil.Background = new SolidColorBrush(Backdrop.Tint(surface, Crystal ? (byte)0xA0 : (byte)0xE6));
+            Veil.Opacity = 1;
         }
+        else if (glass)
+        {
+            // Clear closes into nothing: the card fades away as it shrinks
+            bodyAnimating = false;
+            Veil.Background = new SolidColorBrush(Backdrop.Tint(surface, 0xC0));
+            Veil.Opacity = 1;
+            Veil.BeginAnimation(OpacityProperty, new DoubleAnimation(0, dur));
+        }
+        else Veil.Opacity = 0;
         var grow = new DoubleAnimation(to.Width, dur) { EasingFunction = ease };
         grow.Completed += (_, _) =>
         {
             if (gen != bodyGen || !bodyAnimating) return; // a newer animation took over
             bodyAnimating = false;
             ApplySurface(); // the see-through tint and the blur behind it, at the final size
+            Veil.BeginAnimation(OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(150)));
         };
         Body.BeginAnimation(WidthProperty, grow);
         Body.BeginAnimation(HeightProperty, new DoubleAnimation(to.Height, dur) { EasingFunction = ease });
@@ -810,6 +884,10 @@ public partial class NotchWindow : Window
         Body.Width = to.Width;
         Body.Height = to.Height;
         Radius = radius;
+        bodyGen++;
+        bodyAnimating = false;
+        Veil.BeginAnimation(OpacityProperty, null);
+        Veil.Opacity = 0;
     }
 
     static void Fade(UIElement el, double to, double ms, double delayMs = 0)
@@ -838,14 +916,15 @@ public partial class NotchWindow : Window
         Body.Opacity = 1;
         ApplySurface();
         ApplyChrome();
-        AnimateBody(new Size(OpenW, OpenH), S.Shape == NotchShape.Island ? 30 : 26, SpeedMs, true);
+        OpenView.Height = OpenSize.Height;
+        AnimateBody(OpenSize, OpenRadius, SpeedMs, true);
         Fade(ClosedView, 0, 90);
         Fade(PeekView, 0, 90);
         Fade(ActivityView, 0, 90);
         activityTimer.Stop();
         // The content fades in as the notch finishes growing, briefly: a fade blends the whole content on every frame,
         // which is costly, so the fewer frames it runs for the smoother the opening (measured: about a fifth less work)
-        Fade(OpenView, 1, 140, SpeedMs * 0.6);
+        Fade(OpenView, 1, 120, SpeedMs * 0.3);
         Tab_Checked(this, new RoutedEventArgs());
         RefreshOpen();
         UpdateTint();
@@ -856,6 +935,7 @@ public partial class NotchWindow : Window
     {
         StopTyping();
         mode = Mode.Closed;
+        phoneView?.SetShown(false);
         leaveTimer.Stop();
         peekTimer.Stop();
         ApplySurface();
@@ -866,7 +946,7 @@ public partial class NotchWindow : Window
         if (animate) AnimateBody(size, ClosedRadius(size), SpeedMs * 0.85, false);
         else SnapBody(size, ClosedRadius(size));
 
-        Fade(OpenView, 0, animate ? 110 : 0);
+        Fade(OpenView, 0, animate ? 70 : 0);
         Fade(PeekView, 0, animate ? 110 : 0);
         Fade(ActivityView, 0, animate ? 110 : 0);
         Fade(ClosedView, HideMode ? 0 : 1, animate ? 200 : 0, animate ? SpeedMs * 0.4 : 0);
@@ -1393,13 +1473,30 @@ public partial class NotchWindow : Window
     void Tab_Checked(object sender, RoutedEventArgs e)
     {
         if (HomePanel == null || AppsPanel == null || ShelfPanel == null || ClipPanel == null || CtrlPanel == null || GamesPanel == null || TimerPanel == null
-            || MsgPanel == null || TabMsgs == null || NotesPanel == null || TabNotes == null || CalcPanel == null || TabCalc == null) return;
+            || MsgPanel == null || TabMsgs == null || NotesPanel == null || TabNotes == null || CalcPanel == null || TabCalc == null || SystemPanel == null || TabSystem == null || PhonePanel == null || TabPhone == null || DocsPanel == null || TabDocs == null) return;
         bool notes = TabNotes.IsChecked == true;
         NotesPanel.Visibility = notes ? Visibility.Visible : Visibility.Collapsed;
         if (notes && NotesPanel.Children.Count == 0) NotesPanel.Children.Add(new NotesView(EnableTyping));
         bool calc = TabCalc.IsChecked == true;
         CalcPanel.Visibility = calc ? Visibility.Visible : Visibility.Collapsed;
         if (calc && CalcPanel.Children.Count == 0) CalcPanel.Children.Add(new CalculatorView(EnableTyping));
+        // Typing in Notes (or the calculator, or the clipboard search) holds the notch open and has the keyboard. Off
+        // to a tab with nothing to type in: let go of both, so moving the mouse away closes it again
+        if (typing && TabNotes.IsChecked != true && TabCalc.IsChecked != true && TabClip.IsChecked != true && TabPhone.IsChecked != true)
+        {
+            StopTyping();
+            if (!Body.IsMouseOver) leaveTimer.Start();
+        }
+        bool docs = TabDocs.IsChecked == true;
+        DocsPanel.Visibility = docs ? Visibility.Visible : Visibility.Collapsed;
+        if (docs && DocsPanel.Children.Count == 0) DocsPanel.Children.Add(new DocsView(() => holdOpen++, () => { holdOpen = Math.Max(0, holdOpen - 1); if (!Body.IsMouseOver) leaveTimer.Start(); }));
+        bool phone = TabPhone.IsChecked == true;
+        PhonePanel.Visibility = phone ? Visibility.Visible : Visibility.Collapsed;
+        if (phone && phoneView == null) PhonePanel.Children.Add(phoneView = new PhoneView(() => holdOpen++, () => { holdOpen = Math.Max(0, holdOpen - 1); if (!Body.IsMouseOver) leaveTimer.Start(); }, EnableTyping));
+        phoneView?.SetShown(mode == Mode.Open && phone);
+        bool sys = TabSystem.IsChecked == true;
+        SystemPanel.Visibility = sys ? Visibility.Visible : Visibility.Collapsed;
+        if (sys && SystemPanel.Children.Count == 0) SystemPanel.Children.Add(new SystemView());
         bool msgs = TabMsgs.IsChecked == true;
         MsgPanel.Visibility = msgs ? Visibility.Visible : Visibility.Collapsed;
         if (msgs && MsgPanel.Children.Count == 0) MsgPanel.Children.Add(new MessagesView(ShowMenu, () => Collapse()));
@@ -1410,6 +1507,9 @@ public partial class NotchWindow : Window
         bool ctrl = TabCtrl.IsChecked == true;
         CtrlPanel.Visibility = ctrl ? Visibility.Visible : Visibility.Collapsed;
         if (ctrl && CtrlPanel.Children.Count == 0) CtrlPanel.Children.Add(new QuickPanel(compact: true));
+        // Tabs whose content would sit straight on the glass get the shared card behind them
+        PanelCard.Visibility = TabApps.IsChecked == true || TabShelf.IsChecked == true || TabClip.IsChecked == true || TabCtrl.IsChecked == true
+            || TabTimer.IsChecked == true || calc || phone ? Visibility.Visible : Visibility.Collapsed;
         bool timer = TabTimer.IsChecked == true;
         TimerPanel.Visibility = timer ? Visibility.Visible : Visibility.Collapsed;
         if (timer && TimerPanel.Children.Count == 0) TimerPanel.Children.Add(new FocusTimerView());
@@ -1423,6 +1523,12 @@ public partial class NotchWindow : Window
             RebuildShortcuts();
         }, () => holdOpen++, () => { holdOpen--; if (!Body.IsMouseOver) leaveTimer.Start(); }));
         UpdateTint();
+        // A tab that needs more (or less) room: grow or shrink to it
+        if (mode == Mode.Open && Math.Abs(OpenView.Height - OpenSize.Height) > 0.5)
+        {
+            OpenView.Height = OpenSize.Height;
+            AnimateBody(OpenSize, OpenRadius, SpeedMs, true);
+        }
     }
 
     void Screenshot_Click(object sender, RoutedEventArgs e)
@@ -1900,8 +2006,37 @@ public partial class NotchWindow : Window
         var menu = new ContextMenu();
         menu.Items.Add(MakeItem("Open", () => Launcher.Open(item.Path)));
         menu.Items.Add(MakeItem("Show in folder", () => Launcher.ShowInFolder(item.Path)));
+        // Documents: convert or edit straight from the Shelf (the result lands on the Shelf too)
+        if (Docs.IsPdf(item.Path))
+        {
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MakeItem("Convert to Word", () => ConvertOnShelf(item.Path, Docs.ToWord)));
+            menu.Items.Add(MakeItem("Edit PDF…", () => PdfEditorWindow.Open(item.Path)));
+        }
+        else if (Docs.CanMakePdf(item.Path) && System.IO.File.Exists(item.Path))
+        {
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MakeItem("Convert to PDF", () => ConvertOnShelf(item.Path, Docs.ToPdf)));
+        }
+        menu.Items.Add(new Separator());
         menu.Items.Add(MakeItem("Remove from shelf", () => Shelf.Items.Remove(item)));
         ShowMenu(menu, (UIElement)sender);
+    }
+
+    async void ConvertOnShelf(string path, System.Func<string, System.Threading.Tasks.Task<string>> run)
+    {
+        ShowActivity("", "Converting…", System.IO.Path.GetFileName(path), null, 30);
+        try
+        {
+            var result = await run(path);
+            Shelf.Add(new[] { result });
+            ShowAction("", "Done", System.IO.Path.GetFileName(result) + " is on the Shelf", () => Open(TabShelf), 5);
+        }
+        catch (System.Exception ex)
+        {
+            Log.Error("docs", ex);
+            ShowActivity("", "Couldn't convert", ex.Message, null, 6);
+        }
     }
 
     void ShelfClear_Click(object sender, RoutedEventArgs e) => Shelf.Items.Clear();
@@ -1935,6 +2070,7 @@ public partial class NotchWindow : Window
     // ---------- clipboard search (the notch normally never takes keyboard focus, so it opts in while you type)
 
     bool typing;
+    IntPtr typingFrom;
 
     void ClipSearch_Click(object sender, MouseButtonEventArgs e) => EnableTyping(ClipSearch);
 
@@ -1943,6 +2079,8 @@ public partial class NotchWindow : Window
         if (!typing)
         {
             typing = true;
+            var fg = Native.GetForegroundWindow();
+            typingFrom = fg != hwnd ? fg : IntPtr.Zero;
             long ex = Native.GetWindowLongPtr(hwnd, Native.GWL_EXSTYLE).ToInt64() & ~Native.WS_EX_NOACTIVATE;
             Native.SetWindowLongPtr(hwnd, Native.GWL_EXSTYLE, new IntPtr(ex));
             holdOpen++;
@@ -1959,6 +2097,9 @@ public partial class NotchWindow : Window
         holdOpen = Math.Max(0, holdOpen - 1);
         long ex = Native.GetWindowLongPtr(hwnd, Native.GWL_EXSTYLE).ToInt64() | Native.WS_EX_NOACTIVATE;
         Native.SetWindowLongPtr(hwnd, Native.GWL_EXSTYLE, new IntPtr(ex));
+        // Still the window with the keyboard: give it back to the app you were in
+        if (Native.GetForegroundWindow() == hwnd && typingFrom != IntPtr.Zero && Native.IsWindow(typingFrom)) Native.ForceForeground(typingFrom);
+        typingFrom = IntPtr.Zero;
         ClipSearch.Text = "";
     }
 

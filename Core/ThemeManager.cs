@@ -75,6 +75,16 @@ public static class ThemeManager
     /// <summary>A see-through colour drawn over black (for the Smoke theme's glassy surfaces).</summary>
     static Color Solid(Color c) => Color.FromRgb((byte)(c.R * c.A / 255), (byte)(c.G * c.A / 255), (byte)(c.B * c.A / 255));
 
+    /// <summary>After the colours change (cards use it to refresh the lighter shade inside them).</summary>
+    public static event Action? Applied;
+
+    /// <summary>A raised colour a step lighter, keeping its see-through amount.</summary>
+    static Color Lift(Color c)
+    {
+        var m = Mix(c, Colors.White, c.A < 255 ? 0.12 : 0.075);
+        return Color.FromArgb(c.A < 255 ? (byte)Math.Min(255, c.A + 0x14) : c.A, m.R, m.G, m.B);
+    }
+
     public static void Apply()
     {
         var s = SettingsStore.Current;
@@ -84,6 +94,9 @@ public static class ThemeManager
 
         r["Brim.Surface"] = B(p.Surface);
         r["Brim.Raised"] = B(p.Raised);
+        // Cards in the notch, and a lighter shade for what sits on them (pills, keys, the selected tab)
+        r["Brim.Card"] = B(p.Raised);
+        r["Brim.Lift"] = B(Lift(Parse(p.Raised)));
         r["Brim.Text"] = B(p.Text);
         r["Brim.Dim"] = B(p.Dim);
         r["Brim.Hover"] = B("#1FFFFFFF");
@@ -131,5 +144,6 @@ public static class ThemeManager
                 r["Brim.WidgetDim"] = B("#B3F5F5F7");
                 break;
         }
+        Applied?.Invoke();
     }
 }

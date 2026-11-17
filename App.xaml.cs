@@ -147,6 +147,8 @@ public partial class App : Application
     /// <summary>The phone window: its QR code turns on the phone link.</summary>
     public void OpenPhone()
     {
+        // The notch's Phone tab; its own window when that tab is hidden or the notch is away (a fullscreen app)
+        if (phoneWindow == null && notch != null && notch.OpenTab("Phone")) return;
         if (phoneWindow == null)
         {
             phoneWindow = new PhoneWindow();
@@ -520,7 +522,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test" or "--pins-test" or "--apps-test" or "--tray-test" or "--phone-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test" or "--pins-test" or "--apps-test" or "--tray-test" or "--phone-test" or "--docs-test" or "--pdfedit-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -536,7 +538,7 @@ public partial class App : Application
                             // How smoothly the notch opens: the time each frame took while it grows, for each surface
                             SettingsStore.Load();
                             ThemeManager.Apply();
-                            foreach (var surface in new[] { "Solid", "Glass", "Clear" })
+                            foreach (var surface in new[] { "Solid", "Glass", "Crystal", "Clear" })
                             {
                                 S.NotchSurface = surface;
                                 var n = new Brim.Views.NotchWindow();
@@ -582,6 +584,78 @@ public partial class App : Application
                                 foreach (var a in allApps.Where(a => a.Id.Contains(":\\"))) sb.AppendLine($"{a.Name}  ←  {a.Id}");
                             }
                             break;
+                        case "--pdfedit-test":
+                            sb.Append(await Brim.Views.PdfEditorWindow.SelfTest(e.Args[2], e.Args[3], System.IO.Path.GetDirectoryName(e.Args[1])!));
+                            break;
+                        case "--docs-test":
+                        {
+                            // Converting both ways with whatever this PC has (Office or LibreOffice), in a temp folder
+                            var dir = System.IO.Directory.CreateDirectory(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "brim-docs-test")).FullName;
+                            foreach (var old in System.IO.Directory.GetFiles(dir)) System.IO.File.Delete(old);
+                            var rtf = System.IO.Path.Combine(dir, "Report é.rtf");
+                            System.IO.File.WriteAllText(rtf, @"{\rtf1\ansi{\fonttbl\f0 Segoe UI;}\f0\fs28 Brim docs test\par Second line with numbers 12345.\par}");
+                            sb.AppendLine($"engine: {Docs.Engine ?? "none"}");
+                            var before = System.Diagnostics.Process.GetProcessesByName("WINWORD").Length;
+                            var sw = System.Diagnostics.Stopwatch.StartNew();
+                            try
+                            {
+                                var pdf = await Docs.ToPdf(rtf);
+                                var head = System.Text.Encoding.ASCII.GetString(System.IO.File.ReadAllBytes(pdf), 0, 5);
+                                sb.AppendLine($"to PDF: {System.IO.Path.GetFileName(pdf)} {new System.IO.FileInfo(pdf).Length} bytes, starts '{head}', {sw.ElapsedMilliseconds} ms");
+                                sw.Restart();
+                                var docx = await Docs.ToWord(pdf);
+                                var zip = System.Text.Encoding.ASCII.GetString(System.IO.File.ReadAllBytes(docx), 0, 2);
+                                bool hasText = false;
+                                using (var za = System.IO.Compression.ZipFile.OpenRead(docx))
+                                using (var rd = new System.IO.StreamReader(za.GetEntry("word/document.xml")!.Open()))
+                                    hasText = rd.ReadToEnd().Contains("12345");
+                                sb.AppendLine($"to Word: {System.IO.Path.GetFileName(docx)} {new System.IO.FileInfo(docx).Length} bytes, zip '{zip}', text kept {hasText}, {sw.ElapsedMilliseconds} ms");
+                                var again = await Docs.ToPdf(rtf);
+                                sb.AppendLine($"second PDF of the same file: {System.IO.Path.GetFileName(again)}");
+                            }
+                            catch (Exception ex) { sb.AppendLine("FAILED: " + ex.Message); }
+                            await System.Threading.Tasks.Task.Delay(1500);
+                            sb.AppendLine($"Word copies running before {before}, after {System.Diagnostics.Process.GetProcessesByName("WINWORD").Length}");
+                            sb.AppendLine($"recent: {Docs.Recent.Count}");
+                            if (e.Args.Length > 2 && System.IO.File.Exists(e.Args[2]))
+                            {
+                                // A real PDF too (a realCopy, in the temp folder)
+                                var realCopy = System.IO.Path.Combine(dir, "real.pdf");
+                                System.IO.File.Copy(e.Args[2], realCopy, true);
+                                sw.Restart();
+                                try
+                                {
+                                    var real = await Docs.ToWord(realCopy);
+                                    using var za = System.IO.Compression.ZipFile.OpenRead(real);
+                                    int pics = za.Entries.Count(x => x.FullName.StartsWith("word/media/"));
+                                    string xml; using (var rd = new System.IO.StreamReader(za.GetEntry("word/document.xml")!.Open())) xml = rd.ReadToEnd();
+                                    int paras = System.Text.RegularExpressions.Regex.Matches(xml, "<w:p>").Count;
+                                    sb.AppendLine($"real PDF to Word: {new System.IO.FileInfo(real).Length / 1024} KB, {paras} paragraphs, {pics} pictures, {sw.ElapsedMilliseconds} ms -> {real}");
+                                    // Back to PDF through Word, then pictures of the same pages from both, to compare by eye
+                                    var back = await Docs.ToPdf(real);
+                                    var shots = System.IO.Path.GetDirectoryName(e.Args[1])!;
+                                    foreach (var (name, file) in new[] { ("orig", realCopy), ("roundtrip", back) })
+                                        await System.Threading.Tasks.Task.Run(() =>
+                                        {
+                                            var f = global::Windows.Storage.StorageFile.GetFileFromPathAsync(file).AsTask().GetAwaiter().GetResult();
+                                            var d = global::Windows.Data.Pdf.PdfDocument.LoadFromFileAsync(f).AsTask().GetAwaiter().GetResult();
+                                            foreach (uint pn in new uint[] { 0, 1, 2 })
+                                            {
+                                                if (pn >= d.PageCount) continue;
+                                                using var pg = d.GetPage(pn);
+                                                using var ras = new global::Windows.Storage.Streams.InMemoryRandomAccessStream();
+                                                pg.RenderToStreamAsync(ras, new global::Windows.Data.Pdf.PdfPageRenderOptions { DestinationWidth = 700 }).AsTask().GetAwaiter().GetResult();
+                                                ras.Seek(0);
+                                                using var fs = System.IO.File.Create(System.IO.Path.Combine(shots, $"{name}-p{pn + 1}.png"));
+                                                System.IO.WindowsRuntimeStreamExtensions.AsStreamForRead(ras).CopyTo(fs);
+                                            }
+                                        });
+                                    sb.AppendLine($"round trip: {System.IO.Path.GetFileName(back)}; pictures in {shots}");
+                                }
+                                catch (Exception ex) { sb.AppendLine("real PDF FAILED: " + ex); }
+                            }
+                            break;
+                        }
                         case "--phone-test":
                         {
                             // The phone page's server, asked the way a phone would (on this PC only, saving into a temp folder)
@@ -1334,7 +1408,7 @@ public partial class App : Application
 
         tray = new TrayIcon(this);
 
-        second.Tick += (_, _) => { SystemInfo.Sample(); SecondTick?.Invoke(); };
+        second.Tick += (_, _) => { SystemInfo.Sample(); SystemHistory.Sample(); SecondTick?.Invoke(); };
         second.Start();
         shell.Tick += (_, _) => ShellTick();
         shell.Start();
@@ -1685,11 +1759,37 @@ public partial class App : Application
         return sb.ToString();
     }
 
+    DispatcherTimer? switcherGone;
+
+    /// <summary>
+    /// The switch happened while Alt+Tab (or Task View) was still up: react the moment it closes, rather than at the
+    /// next half-second check (the dock used to linger a beat over a fullscreen video you'd just switched to).
+    /// </summary>
+    void AfterSwitcher()
+    {
+        if (switcherGone == null)
+        {
+            switcherGone = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
+            var started = DateTime.Now;
+            switcherGone.Tick += (_, _) =>
+            {
+                if (Native.SwitcherInFront() && DateTime.Now - started < TimeSpan.FromSeconds(10)) return;
+                switcherGone!.Stop();
+                switcherGone = null;
+                React();
+            };
+        }
+        if (!switcherGone.IsEnabled) switcherGone.Start();
+    }
+
+    /// <summary>The pointer left the dock: a fullscreen app it was holding off for (you clicked an icon) hides it now.</summary>
+    public void RecheckFullscreen() => FullscreenNow();
+
     void React()
     {
         // Alt+Tab, Task View or a swipe in progress: hold everything still until it's done (Brim used to slide the
         // notch and dock out and back under Windows' own animation, which made gestures stutter)
-        if (Native.SwitcherInFront()) { Log.Trace("react: skipped (switching)"); return; }
+        if (Native.SwitcherInFront()) { Log.Trace("react: skipped (switching)"); AfterSwitcher(); return; }
         reacts++;
         Log.Trace("react: start");
         // The desktop was just shown or hidden (three fingers down, Win+D, Show desktop): Windows is still animating
@@ -1723,6 +1823,9 @@ public partial class App : Application
         if (shown == desktopShown) return false;
         desktopShown = shown;
         AttentionWatcher.DesktopToggled();
+        // Widgets go up over the desktop, or drop behind the returning apps, right now rather than after the wait
+        // below (they used to sit over the returning windows for a moment and then vanish)
+        widgets.CheckDesktop();
         return true;
     }
 

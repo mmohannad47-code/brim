@@ -9,6 +9,8 @@
     <!-- Defaults; ThemeManager replaces these at startup and on every change -->
     <SolidColorBrush x:Key="Brim.Surface" Color="#FF000000"/>
     <SolidColorBrush x:Key="Brim.Raised" Color="#FF1C1C1E"/>
+    <SolidColorBrush x:Key="Brim.Card" Color="#FF1C1C1E"/>
+    <SolidColorBrush x:Key="Brim.Lift" Color="#FF2A2A2D"/>
     <SolidColorBrush x:Key="Brim.Hover" Color="#1FFFFFFF"/>
     <SolidColorBrush x:Key="Brim.Text" Color="#FFF5F5F7"/>
     <SolidColorBrush x:Key="Brim.Dim" Color="#FF8E8E93"/>
@@ -117,7 +119,7 @@
         <Setter Property="FontSize" Value="14"/>
         <Setter Property="Width" Value="40"/>
         <Setter Property="Height" Value="30"/>
-        <Setter Property="Margin" Value="0,0,4,0"/>
+        <Setter Property="Margin" Value="1,0,1,0"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Focusable" Value="False"/>
         <Setter Property="Template">

@@ -185,7 +185,7 @@ public class AppSettings
     public bool HideFromCapture { get; set; }
     public double IslandTop { get; set; } = 8;
     public bool ReopenLastTab { get; set; }
-    /// <summary>Solid, Glass (blurred see-through) or Clear (invisible when closed, glass when open)</summary>
+    /// <summary>Solid, Glass (blurred see-through), Crystal (clearer glass) or Clear (invisible when closed, glass when open)</summary>
     public string NotchSurface { get; set; } = "Solid";
     /// <summary>Where along the top edge the notch sits: Left, Center or Right</summary>
     public string NotchPosition { get; set; } = "Center";
@@ -224,7 +224,7 @@ public class AppSettings
 
     // Taskbar
     public TaskbarMode Taskbar { get; set; } = TaskbarMode.Windows;
-    /// <summary>Solid, Glass or Clear for the Brim dock</summary>
+    /// <summary>Solid, Glass, Crystal or Clear for the Brim dock</summary>
     public string DockSurface { get; set; } = "Solid";
     public bool DockAutoHide { get; set; }
     public bool DockReserve { get; set; } = true;
@@ -292,6 +292,10 @@ public class AppSettings
     public int PhonePort { get; set; }
     /// <summary>The phone link is only on while Brim's Phone window is open: closing it turns the link off</summary>
     public bool PhoneOnlyWhileOpen { get; set; }
+    /// <summary>The address (network) picked for the phone link, when this PC is on more than one</summary>
+    public string? PhoneAddress { get; set; }
+    /// <summary>PDF to Word as flowing paragraphs instead of keeping the layout (each block where it is on the page)</summary>
+    public bool PdfToWordFlow { get; set; }
 
     // Games
     public List<GameOverride> GameOverrides { get; set; } = new();
@@ -333,9 +337,12 @@ public static class NotchCatalog
         ("Home", "Home", ""), ("Apps", "Shortcuts", ""), ("Games", "Games", ""), ("Messages", "Messages", ""),
         ("Shelf", "Shelf", ""), ("Clip", "Clipboard", ""), ("Ctrl", "Controls", ""),
         ("Timer", "Focus timer", ""), ("Notes", "Notes", "\uE70B"), ("Calc", "Calculator", "\uE8EF"),
+        ("System", "System", "\uE9D9"),
+        ("Phone", "Phone", "\uE8EA"),
+        ("Docs", "Docs", "\uE8A5"),
     };
 
-    public static readonly string[] DefaultTabs = { "Home", "Apps", "Games", "Messages", "Notes", "Calc", "Shelf", "Clip", "Ctrl", "Timer" };
+    public static readonly string[] DefaultTabs = { "Home", "Apps", "Games", "Messages", "Notes", "Calc", "Shelf", "Phone", "Docs", "Clip", "Ctrl", "System", "Timer" };
     /// <summary>The tabs Brim had before tabs could be added by updates</summary>
     public static readonly string[] OriginalTabs = { "Home", "Apps", "Games", "Messages", "Shelf", "Clip", "Ctrl", "Timer" };
 

@@ -69,6 +69,21 @@ public static class Snapshot
             Probe("just let go");
             await Task.Delay(500);
             Probe("500 ms later");
+            // Pulled far past either end: it stops at the end of the row
+            {
+                var f2 = host.Children.OfType<FrameworkElement>().First();
+                var q0 = f2.TranslatePoint(new Point(f2.ActualWidth / 2, f2.ActualHeight / 2), host);
+                r.Begin(f2, q0);
+                r.Drag(new Point(q0.X + 5000, q0.Y - 400));
+                var last = host.Children.OfType<FrameworkElement>().Max(c => System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(c).Right);
+                var box = f2.TranslatePoint(new Point(0, 0), host);
+                log.AppendLine($"pulled 5000 px right: carried item's left edge at {box.X:0} (+{f2.ActualWidth:0} wide), row ends at {last:0}");
+                r.Drag(new Point(q0.X - 5000, q0.Y));
+                box = f2.TranslatePoint(new Point(0, 0), host);
+                log.AppendLine($"pulled 5000 px left: carried item's left edge at {box.X:0}");
+                r.End();
+                await Task.Delay(400);
+            }
             File.WriteAllText(Path.Combine(folder, "dock-probe.txt"), log.ToString());
             Save(dock, Path.Combine(folder, "dock-3-dropped.png")); // (off-screen pictures can lag behind: dock-probe.txt has the real values)
         }
@@ -186,7 +201,7 @@ public static class Snapshot
         Shelf.Items[0].Selected = true; Shelf.Items[2].Selected = true;
         GameLibrary.SetOrder(new() { "riot:league_of_legends.live", "folder:d:\\games\\bloodborne" });
         await MessageCenter.Refresh();
-        foreach (var tab in new[] { "Home", "Apps", "Games", "Messages", "Notes", "Calc", "Shelf", "Clip", "Ctrl", "Timer" })
+        foreach (var tab in new[] { "Home", "Apps", "Games", "Messages", "Notes", "Calc", "Shelf", "Phone", "Docs", "Clip", "Ctrl", "System", "Timer" })
         {
             notch.DebugOpen(tab);
             await Task.Delay(900);

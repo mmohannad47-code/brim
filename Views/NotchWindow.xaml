@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Brim Notch" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize" ShowActivated="False"
-        Width="680" Height="340" UseLayoutRounding="True"
+        Width="680" Height="480" UseLayoutRounding="True"
         FontFamily="{StaticResource Brim.Font}" Foreground="{DynamicResource Brim.Text}">
     <Grid>
         <StackPanel x:Name="ShapeRow" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Top">
@@ -14,6 +14,10 @@
                     Background="{DynamicResource Brim.Surface}" CornerRadius="0,0,12,12">
                 <Grid>
                     <Border x:Name="Tint" Opacity="0" IsHitTestVisible="False"/>
+                    <!-- Covers the glass while the notch grows or shrinks (the blur can't follow every frame), then fades away -->
+                    <Border x:Name="Veil" Opacity="0" IsHitTestVisible="False"/>
+                    <!-- Crystal: a frosted rim along the edge the blur doesn't reach -->
+                    <Border x:Name="Edge" BorderThickness="0" IsHitTestVisible="False"/>
 
                     <!-- Closed: a quiet pill -->
                     <Grid x:Name="ClosedView" Margin="12,0">
@@ -66,13 +70,15 @@
                     </Grid>
 
                     <!-- Open: the card -->
-                    <Grid x:Name="OpenView" Width="580" Height="244" HorizontalAlignment="Center" VerticalAlignment="Top" Opacity="0" IsHitTestVisible="False">
+                    <Grid x:Name="OpenView" Width="580" Height="258" HorizontalAlignment="Center" VerticalAlignment="Top" Opacity="0" IsHitTestVisible="False">
                         <Grid x:Name="OpenInner" Margin="20,12,20,18">
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="32"/>
+                                <RowDefinition Height="36"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
+                            <!-- The tab bar: tabs, the tab's name and the buttons on one rounded bar, readable over any wallpaper -->
+                            <Border x:Name="HeaderBar" CornerRadius="14" Padding="3,2" Background="{DynamicResource Brim.Card}">
                             <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -91,6 +97,9 @@
                                 <RadioButton x:Name="TabTimer" GroupName="NotchTabs" Style="{StaticResource TabButton}" Content="&#xE916;" ToolTip="Focus timer" Checked="Tab_Checked"/>
                                 <RadioButton x:Name="TabNotes" GroupName="NotchTabs" Style="{StaticResource TabButton}" Content="&#xE70B;" ToolTip="Notes" Checked="Tab_Checked"/>
                                 <RadioButton x:Name="TabCalc" GroupName="NotchTabs" Style="{StaticResource TabButton}" Content="&#xE8EF;" ToolTip="Calculator" Checked="Tab_Checked"/>
+                                <RadioButton x:Name="TabSystem" GroupName="NotchTabs" Style="{StaticResource TabButton}" Content="&#xE9D9;" ToolTip="System" Checked="Tab_Checked"/>
+                                <RadioButton x:Name="TabPhone" GroupName="NotchTabs" Style="{StaticResource TabButton}" Content="&#xE8EA;" ToolTip="Phone" Checked="Tab_Checked"/>
+                                <RadioButton x:Name="TabDocs" GroupName="NotchTabs" Style="{StaticResource TabButton}" Content="&#xE8A5;" ToolTip="Docs: Word ⇄ PDF, edit PDFs" Checked="Tab_Checked"/>
                             </StackPanel>
                             <!-- The tab's name sits between the tabs and the buttons and shortens with … rather than overlapping either -->
                             <TextBlock x:Name="HeaderInfo" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" FontSize="12"
@@ -100,27 +109,32 @@
                                 <Button Style="{StaticResource IconButton}" Content="&#xE713;" ToolTip="Brim settings" Click="Settings_Click"/>
                             </StackPanel>
                             </Grid>
+                            </Border>
 
-                            <Grid Grid.Row="1" Margin="0,12,0,0" x:Name="TabContent" Background="Transparent">
+                            <Grid Grid.Row="1" Margin="0,10,0,0" x:Name="TabContent" Background="Transparent">
+                                <!-- The card behind tabs whose content would otherwise sit straight on the glass -->
+                                <Border x:Name="PanelCard" CornerRadius="18" Background="{DynamicResource Brim.Card}" Visibility="Collapsed"/>
 
                                 <!-- HOME: now playing + glance -->
                                 <Grid x:Name="HomePanel">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="22"/>
-                                        <ColumnDefinition Width="140"/>
+                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="164"/>
                                     </Grid.ColumnDefinitions>
+                                    <Border x:Name="MusicCard" CornerRadius="18" Background="{DynamicResource Brim.Card}"/>
+                                    <Border x:Name="GlanceCard" Grid.Column="2" CornerRadius="18" Background="{DynamicResource Brim.Card}"/>
 
-                                    <Grid x:Name="MusicArea">
+                                    <Grid x:Name="MusicArea" Margin="12">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition/>
                                         </Grid.ColumnDefinitions>
-                                        <Border Width="112" Height="112" CornerRadius="16" Background="{DynamicResource Brim.Raised}" VerticalAlignment="Top">
+                                        <Border Width="118" Height="118" CornerRadius="12" Background="{DynamicResource Brim.Raised}" VerticalAlignment="Top">
                                             <Grid>
                                                 <TextBlock x:Name="ArtPlaceholder" Text="&#xE8D6;" FontFamily="{StaticResource Brim.Icons}" FontSize="30"
                                                            Foreground="{DynamicResource Brim.Dim}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                <Border x:Name="ArtImage" CornerRadius="16"/>
+                                                <Border x:Name="ArtImage" CornerRadius="12"/>
                                             </Grid>
                                         </Border>
                                         <Grid Grid.Column="1" Margin="16,0,0,0">
@@ -164,7 +178,7 @@
                                     </Grid>
 
                                     <!-- The glance column: its parts are shown, hidden and ordered from Settings › Notch › Home tab -->
-                                    <ScrollViewer x:Name="GlanceScroll" Grid.Column="2" VerticalScrollBarVisibility="Hidden" PreviewMouseWheel="Glance_Wheel" ScrollChanged="Glance_ScrollChanged">
+                                    <ScrollViewer x:Name="GlanceScroll" Grid.Column="2" Margin="12,10,12,10" VerticalScrollBarVisibility="Hidden" PreviewMouseWheel="Glance_Wheel" ScrollChanged="Glance_ScrollChanged">
                                     <WrapPanel x:Name="Glance" Orientation="Horizontal">
                                         <StackPanel x:Name="DateBlock">
                                             <Grid x:Name="DayRow">
@@ -223,12 +237,12 @@
                                     </WrapPanel>
                                     </ScrollViewer>
                                     <!-- Pages of the glance column: scroll or swipe through them -->
-                                    <StackPanel x:Name="GlanceDots" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-14,0"
+                                    <StackPanel x:Name="GlanceDots" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,4,0"
                                                 IsHitTestVisible="False" Visibility="Collapsed"/>
                                 </Grid>
 
                                 <!-- SHORTCUTS -->
-                                <Grid x:Name="AppsPanel" Visibility="Collapsed" AllowDrop="True" Background="Transparent">
+                                <Grid x:Name="AppsPanel" Margin="8" Visibility="Collapsed" AllowDrop="True" Background="Transparent">
                                     <ItemsControl x:Name="AppsList">
                                         <ItemsControl.ItemsPanel>
                                             <ItemsPanelTemplate>
@@ -260,7 +274,7 @@
                                 </Grid>
 
                                 <!-- SHELF -->
-                                <Grid x:Name="ShelfPanel" Visibility="Collapsed" Background="Transparent">
+                                <Grid x:Name="ShelfPanel" Margin="8" Visibility="Collapsed" Background="Transparent">
                                     <Border x:Name="ShelfEmpty" CornerRadius="14" BorderThickness="1.5" BorderBrush="{DynamicResource Brim.Stroke}">
                                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <TextBlock Text="&#xE896;" FontFamily="{StaticResource Brim.Icons}" FontSize="26" HorizontalAlignment="Center" Foreground="{DynamicResource Brim.Dim}"/>
@@ -324,25 +338,34 @@
                                 </Grid>
 
                                 <!-- FOCUS TIMER (built on demand) -->
-                                <Grid x:Name="TimerPanel" Visibility="Collapsed"/>
+                                <Grid x:Name="TimerPanel" Margin="10" Visibility="Collapsed"/>
 
                                 <!-- NOTES (built on demand) -->
                                 <Grid x:Name="NotesPanel" Visibility="Collapsed"/>
 
                                 <!-- CALCULATOR (built on demand) -->
-                                <Grid x:Name="CalcPanel" Visibility="Collapsed"/>
+                                <Grid x:Name="CalcPanel" Margin="10" Visibility="Collapsed"/>
 
                                 <!-- GAMES (built on demand) -->
                                 <Grid x:Name="GamesPanel" Visibility="Collapsed"/>
 
                                 <!-- QUICK CONTROLS (built on demand) -->
-                                <Grid x:Name="CtrlPanel" Visibility="Collapsed"/>
+                                <Grid x:Name="CtrlPanel" Margin="10" Visibility="Collapsed"/>
+
+                                <!-- SYSTEM: CPU, memory, network, storage, quick controls (built on demand) -->
+                                <Grid x:Name="SystemPanel" Visibility="Collapsed"/>
+
+                                <!-- PHONE: the QR code and what goes back and forth (built on demand) -->
+                                <Grid x:Name="PhonePanel" Margin="10" Visibility="Collapsed"/>
+
+                                <!-- DOCS: Word to PDF, PDF to Word, the PDF editor (built on demand) -->
+                                <Grid x:Name="DocsPanel" Visibility="Collapsed"/>
 
                                 <!-- MESSAGES (built on demand) -->
                                 <Grid x:Name="MsgPanel" Visibility="Collapsed"/>
 
                                 <!-- CLIPBOARD -->
-                                <Grid x:Name="ClipPanel" Visibility="Collapsed">
+                                <Grid x:Name="ClipPanel" Margin="10" Visibility="Collapsed">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition/>

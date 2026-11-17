@@ -105,7 +105,26 @@ public static class Installer
         }
         // Keep "start with Windows" pointing at the installed copy
         if (SettingsStore.Current.StartWithWindows) Startup.Set(true, exe);
+        RefreshIcon(exe);
         return exe;
+    }
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern void SHChangeNotify(int eventId, uint flags, string? item1, IntPtr item2);
+
+    /// <summary>
+    /// Windows keeps the icon it read from Brim.exe, and the file sits at the same path after every update, so a new
+    /// logo would keep showing the old one (taskbar, title bars, Start menu). Tell Windows the file and its icon changed.
+    /// </summary>
+    static void RefreshIcon(string exe)
+    {
+        try
+        {
+            SHChangeNotify(0x00002000 /* SHCNE_UPDATEITEM */, 0x0005 /* SHCNF_PATHW */, exe, IntPtr.Zero);
+            SHChangeNotify(0x00002000, 0x0005, StartMenuLink, IntPtr.Zero);
+            SHChangeNotify(0x08000000 /* SHCNE_ASSOCCHANGED */, 0x1000 /* SHCNF_FLUSH */, null, IntPtr.Zero);
+        }
+        catch { }
     }
 
     /// <summary>Empty Brim's program folder (only ever %LOCALAPPDATA%\Programs\Brim; settings live elsewhere).</summary>

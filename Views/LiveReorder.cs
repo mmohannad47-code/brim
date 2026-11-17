@@ -126,8 +126,11 @@ sealed class LiveReorder
         int from = items.IndexOf(item);
         if (from < 0) { End(); return; }
         if (Wrap) { DragWrapped(items, from, pointer); return; }
+        // Where the carried item is, kept within the row: it can't be pulled off either end of it
+        double minStart = items.Min(Start), maxEnd = items.Max(o => Start(o) + Length(o));
+        double pos = Math.Clamp(Along(pointer) - grab, minStart, Math.Max(minStart, maxEnd - Length(item)));
         // Where the carried item's middle is now, against the middles of the others
-        double centre = Along(pointer) - grab + Length(item) / 2;
+        double centre = pos + Length(item) / 2;
         int to = items.Where(o => o != item).Count(o => Start(o) + Length(o) / 2 < centre);
         if (to != from)
         {
@@ -154,12 +157,23 @@ sealed class LiveReorder
         // The carried item sits under the pointer
         var t = PartsOf(item).Move;
         t.BeginAnimation(AlongProp, null);
-        t.SetValue(AlongProp, Along(pointer) - grab - Start(item));
+        t.SetValue(AlongProp, pos - Start(item));
+    }
+
+    /// <summary>The top-left corner the carried tile would have under the pointer, kept inside the area the tiles fill.</summary>
+    Point Clamped(List<FrameworkElement> items, Point pointer)
+    {
+        var area = Slot(items[0]);
+        foreach (var o in items.Skip(1)) area.Union(Slot(o));
+        var s = Slot(item!);
+        return new Point(Math.Clamp(pointer.X - grab2.X, area.Left, Math.Max(area.Left, area.Right - s.Width)),
+                         Math.Clamp(pointer.Y - grab2.Y, area.Top, Math.Max(area.Top, area.Bottom - s.Height)));
     }
 
     void DragWrapped(List<FrameworkElement> items, int from, Point pointer)
     {
-        var centre = new Point(pointer.X - grab2.X + Slot(item!).Width / 2, pointer.Y - grab2.Y + Slot(item).Height / 2);
+        var corner = Clamped(items, pointer);
+        var centre = new Point(corner.X + Slot(item!).Width / 2, corner.Y + Slot(item).Height / 2);
         // The place whose middle is nearest (its own counts too, so it stays put until it is clearly closer to another)
         int to = items.Select((o, i) => (i, d: (Mid(o) - centre).LengthSquared)).OrderBy(x => x.d).First().i;
         if (to != from)
@@ -187,8 +201,9 @@ sealed class LiveReorder
         var t = PartsOf(item).Move;
         t.BeginAnimation(TranslateTransform.XProperty, null);
         t.BeginAnimation(TranslateTransform.YProperty, null);
-        t.X = pointer.X - grab2.X - Slot(item).X;
-        t.Y = pointer.Y - grab2.Y - Slot(item).Y;
+        corner = Clamped(Items, pointer); // (the tiles may have moved)
+        t.X = corner.X - Slot(item).X;
+        t.Y = corner.Y - Slot(item).Y;
     }
 
     /// <summary>Dev check: where an item's transforms are now.</summary>

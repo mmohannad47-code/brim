@@ -127,6 +127,43 @@ public sealed class Backdrop : IDisposable
         return g;
     }
 
+
+    /// <summary>
+    /// The strip along a glass shape's edge that the blur doesn't reach, in the shape's own units. Windows rounds the
+    /// blur's corners less than Brim's shapes, so <see cref="Place"/> tucks the blur a little inside them; on Glass the
+    /// tint hides that strip, on Crystal (almost no tint) a frosted rim covers it instead.
+    /// </summary>
+    public static double EdgeBand(double radius, double scale)
+    {
+        if (!Available || scale <= 0) return 0;
+        double r = radius * scale, sys = 8 * scale;
+        return r > sys ? (Math.Ceiling((r - sys) * 0.3) + 1) / scale : 0;
+    }
+
+    /// <summary>Crystal's frosted rim: brightest where the light hits, like the edge of a pane of clear glass.</summary>
+    static System.Windows.Media.Brush? edgeDown, edgeUp;
+
+    public static System.Windows.Media.Brush CrystalEdge(bool litFromBelow = false) =>
+        litFromBelow ? edgeUp ??= MakeEdge(true) : edgeDown ??= MakeEdge(false);
+
+    static System.Windows.Media.Brush MakeEdge(bool litFromBelow)
+    {
+        var g = new System.Windows.Media.LinearGradientBrush
+        {
+            StartPoint = new System.Windows.Point(0, litFromBelow ? 1 : 0),
+            EndPoint = new System.Windows.Point(0, litFromBelow ? 0 : 1),
+        };
+        g.GradientStops.Add(new System.Windows.Media.GradientStop(System.Windows.Media.Color.FromArgb(0x4A, 255, 255, 255), 0));
+        g.GradientStops.Add(new System.Windows.Media.GradientStop(System.Windows.Media.Color.FromArgb(0x2A, 255, 255, 255), 0.5));
+        g.GradientStops.Add(new System.Windows.Media.GradientStop(System.Windows.Media.Color.FromArgb(0x30, 255, 255, 255), 1));
+        g.Freeze();
+        return g;
+    }
+
+    /// <summary>A soft shadow under text and icons, so they stay readable on Crystal's nearly clear glass.</summary>
+    public static System.Windows.Media.Effects.Effect TextLift() =>
+        new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 8, ShadowDepth = 0, Opacity = 0.55, Color = System.Windows.Media.Colors.Black };
+
     public Backdrop()
     {
         var hInst = Native.GetModuleHandle(null);

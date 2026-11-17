@@ -1,3 +1,5 @@
+<img src="Assets/brim-256.png" width="96" alt="Brim logo">
+
 # Brim
 
 **A cleaner Windows desktop.** Brim adds a notch at the top of your screen (music, shortcuts, games, messages, notes and more), an optional dock that replaces the taskbar, desktop widgets and live wallpapers.
@@ -49,6 +51,9 @@ The small pill at the top of the screen. **Point at it** (or press **Ctrl+Alt+N*
 | **Clipboard** | The last 40 things you copied. Click to copy again. Right-click the tab to clear it all (pinned items can stay). |
 | **Controls** | Wi-Fi, Bluetooth, mic, volume, output device and brightness. |
 | **Timer** | A focus timer; the notch counts down and pops out when time's up. |
+| **System** | CPU, memory and network over the last minute, your Wi-Fi network and its speed, free space on every drive, plus volume, brightness, mute and dark mode. |
+| **Phone** | The QR code for your phone, files and text to send, and everything sent each way (see *Your phone* below). |
+| **Docs** | Word, Excel or PowerPoint → PDF, PDF → Word (keeping the layout, or as flowing text) and a PDF editor: reorder, rotate, delete, merge, split, add text, set a password. Drop a file on a tile, or right-click a file on the Shelf. Everything happens on your PC. |
 
 Choose which tabs to show, and their order, in **Settings › Notch**, or just drag a tab left or right in the notch. Right-click any tab to move or hide it, plus its own quick actions (clear the clipboard or shelf, snooze message pop-ups, copy or clear notes, look for new games). The notch can sit at the left, centre or right, look like a notch or a floating island, and hides itself in fullscreen games and videos (only on the screen the game covers). While music plays, the closed notch shows the line being sung (turn off in **Settings › Notch › Lyrics**). Turn on **Settings › Notch › Hide while an app covers it** to tuck it away while an app is maximised or a window sits under it (smaller windows elsewhere leave it showing). With more than one monitor, **Settings › Notch › Screen › Every screen** puts a notch on each of them.
 
@@ -75,7 +80,7 @@ Menus close by themselves once your pointer has left the menu and what you opene
 
 ### Your phone
 
-Send photos, videos, files, links and text between your PC and your **iPhone or Android phone** over your Wi-Fi, with nothing to install on the phone. Open the notch's **Shelf** and press **Phone** (or search *Phone* with Ctrl+Space), then scan the QR code with your phone's camera. A Brim page opens in the phone's browser:
+Send photos, videos, files, links and text between your PC and your **iPhone or Android phone** over your Wi-Fi, with nothing to install on the phone. Open the notch's **Phone** tab (or the Shelf's **Phone** button, or search *Phone* with Ctrl+Space), then scan the QR code with your phone's camera. A Brim page opens in the phone's browser:
 
 - **Phone → PC:** files and photos land in **Downloads** and on the **Shelf**. Links can be sent (copied on the PC) or opened on the PC straight away; text is copied.
 - **PC → phone:** anything on the Shelf shows on the phone page to view or save (folders come as a zip). Right-click a file in Explorer › **Send to › Phone (Brim)**, or type a link or text in the Phone window and press Send.
@@ -96,7 +101,7 @@ Live wallpapers pause by themselves while a game or maximised window covers the 
 
 ### Looks
 
-**Settings › Look**: themes (Black, Graphite, Vampire, Synthwave, Matrix, Gold, Ember, Glacier and more), accent colours (any colour you like from the colour wheel), glass or solid surfaces, and matching colours from your album art. Turn on **Windows uses this accent too** to give Start, the taskbar and title bars the same colour (turning it off gives Windows its own colour back). Under **Notch and taskbar** you can pick your own colour for the closed notch and for the dock. When Windows can't blur (transparency effects off, or energy saver on), glass becomes a plain tint instead of turning black.
+**Settings › Look**: themes (Black, Graphite, Vampire, Synthwave, Matrix, Gold, Ember, Glacier and more), accent colours (any colour you like from the colour wheel), solid, glass or **Crystal** (clearer glass) surfaces for the notch, dock and widgets, and matching colours from your album art. Turn on **Windows uses this accent too** to give Start, the taskbar and title bars the same colour (turning it off gives Windows its own colour back). Under **Notch and taskbar** you can pick your own colour for the closed notch and for the dock. When Windows can't blur (transparency effects off, or energy saver on), glass becomes a plain tint instead of turning black.
 
 ### Keyboard shortcuts
 
@@ -128,9 +133,13 @@ Live wallpapers pause by themselves while a game or maximised window covers the 
 
 ## Privacy
 
-Brim runs on your PC. It only goes online to fetch the things you ask for: wallpapers (wallhaven.cc, Pixabay), game covers (Steam store, SteamGridDB), weather (Open-Meteo, only once you set a city), lyrics (LRCLIB) and website icons for your shortcuts. Notes, clipboard history, messages and settings never leave your PC. The phone link only works inside your home network and never goes through the internet.
+Brim runs on your PC. It only goes online to fetch the things you ask for: wallpapers (wallhaven.cc, Pixabay), game covers (Steam store, SteamGridDB), weather (Open-Meteo, only once you set a city), lyrics (LRCLIB) and website icons for your shortcuts. Notes, clipboard history, messages and settings never leave your PC. Word ⇄ PDF conversions and PDF edits happen on your PC (Word → PDF uses Microsoft Office or LibreOffice if installed); nothing is uploaded. The phone link only works inside your home network and never goes through the internet.
 
 ---
+
+## Credits
+
+Brim uses [QRCoder](https://github.com/codebude/QRCoder) (MIT), [PdfPig](https://github.com/UglyToad/PdfPig) (Apache-2.0) and [PDFsharp](https://github.com/empira/PDFsharp) 6.2 (MIT).
 
 ## Building from source
 

@@ -235,7 +235,7 @@ public sealed class PhoneWindow : Window
     }
 
     /// <summary>The QR code as a small black-and-white picture (scaled up without blurring).</summary>
-    static BitmapSource Qr(string text)
+    internal static BitmapSource Qr(string text)
     {
         using var gen = new QRCoder.QRCodeGenerator();
         using var data = gen.CreateQrCode(text, QRCoder.QRCodeGenerator.ECCLevel.M);

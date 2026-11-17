@@ -86,7 +86,9 @@ public sealed class DockApp : Observable
     public VerticalAlignment DotVAlign => Across ? VerticalAlignment.Center : VerticalAlignment.Bottom;
     public Thickness DotMargin => Side switch { "Left" => new Thickness(1, 0, 0, 0), "Right" => new Thickness(0, 0, 1, 0), _ => new Thickness(0, 0, 0, 1) };
     static readonly Brush Orange = new SolidColorBrush(Color.FromRgb(0xFF, 0x9F, 0x0A));
-    public Brush DotBrush => attention ? Orange : active ? (Brush)Application.Current.FindResource("Brim.Accent") : (Brush)Application.Current.FindResource("Brim.Dim");
+    public Brush DotBrush => attention ? Orange : active ? (Brush)Application.Current.FindResource("Brim.Accent") : IdleDot ?? (Brush)Application.Current.FindResource("Brim.Dim");
+    /// <summary>The running mark of apps not in front, when the bar is see-through (grey would vanish on a bright wallpaper).</summary>
+    public static Brush? IdleDot { get; set; }
 
     void OnDot() { OnChanged(nameof(DotVisibility)); OnChanged(nameof(DotWidth)); OnChanged(nameof(DotW)); OnChanged(nameof(DotH)); OnChanged(nameof(DotBrush)); }
     void OnChanged(string name) => RaiseChanged(name);
@@ -138,6 +140,8 @@ public partial class DockWindow : Window
         OledCare.Dim += OnOledDim;
         LocationChanged += (_, _) => SyncBackdrop();
         Bar.LayoutUpdated += (_, _) => SyncBackdrop();
+        // Clicked an icon to switch to a fullscreen video: the dock waited because the pointer was on it; off it, it goes now
+        MouseLeave += (_, _) => { if (!fullscreen) ((App)Application.Current).RecheckFullscreen(); };
         IsVisibleChanged += (_, _) => SyncBackdrop();
         SourceInitialized += (_, _) =>
         {
@@ -292,6 +296,9 @@ public partial class DockWindow : Window
         Place();
     }
 
+    static readonly Brush GlassDim = Frozen(Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF));
+    static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
+
     void ApplySurface()
     {
         // A see-through bar would show wallpaper again when docked, so Clear becomes solid there
@@ -299,16 +306,36 @@ public partial class DockWindow : Window
         // Your own colour for the bar; on a light one the clock and labels turn dark so they stay readable
         Color? own = S.DockColor != null && surface != "Clear" ? ThemeManager.Parse(S.DockColor) : null;
         if (own is Color lc && ThemeManager.IsLight(lc)) { Bar.Resources["Brim.Text"] = Brushes.Black; Bar.Resources["Brim.Dim"] = new SolidColorBrush(Color.FromRgb(0x45, 0x45, 0x4C)); }
+        else if (surface != "Solid")
+        {
+            // On glass the date, keyboard region and running marks are light rather than grey, so they read over any wallpaper
+            Bar.Resources.Remove("Brim.Text");
+            Bar.Resources["Brim.Dim"] = GlassDim;
+        }
         else { Bar.Resources.Remove("Brim.Text"); Bar.Resources.Remove("Brim.Dim"); }
+        DockApp.IdleDot = surface != "Solid" && !(own is Color dc && ThemeManager.IsLight(dc)) ? GlassDim : null;
         switch (surface)
         {
             case "Glass":
+            case "Crystal":
                 var c = own ?? ThemeManager.Parse(ThemeManager.Current.Surface);
-                Bar.Background = Backdrop.Glass(c, own != null ? (byte)0x80 : (byte)0x2E);
-                if (Backdrop.Available) Bar.BorderBrush = Backdrop.Rim();
-                else Bar.SetResourceReference(Border.BorderBrushProperty, "Brim.Stroke");
-                Bar.BorderThickness = docked ? DockedBorder : new Thickness(1);
-                BarContent.Effect = null;
+                bool crystal = surface == "Crystal";
+                Bar.Background = Backdrop.Glass(c, crystal ? (own != null ? (byte)0x48 : (byte)0x12) : (own != null ? (byte)0x80 : (byte)0x2E));
+                if (crystal)
+                {
+                    // Nearly clear: a frosted rim covers the strip along the edge the blur doesn't reach, and the
+                    // icons and clock get a soft shadow so they stay readable
+                    Bar.BorderBrush = Backdrop.CrystalEdge();
+                    double band = Math.Max(1, Backdrop.EdgeBand(Bar.CornerRadius.TopLeft, Dpi()));
+                    Bar.BorderThickness = docked ? DockedBorder : new Thickness(band);
+                    BarContent.Effect = Backdrop.TextLift();
+                }
+                else
+                {
+                    Bar.SetResourceReference(Border.BorderBrushProperty, "Brim.Stroke");
+                    Bar.BorderThickness = docked ? DockedBorder : new Thickness(1);
+                    BarContent.Effect = null;
+                }
                 if (Backdrop.Available) backdrop ??= new Backdrop();
                 else { backdrop?.Dispose(); backdrop = null; }
                 break;
@@ -1426,6 +1453,10 @@ public partial class DockWindow : Window
             Native.TapKeys(0x1B /* Esc */);
             await System.Threading.Tasks.Task.Delay(220);
         }
+        // Straight to the taskbar's own "show desktop" command (instant: no fake key presses a game or Start could eat,
+        // and none of the shell automation object's start-up time)
+        var tray = Native.FindWindow("Shell_TrayWnd", null);
+        if (tray != IntPtr.Zero && Native.PostMessage(tray, 0x0111 /* WM_COMMAND */, new IntPtr(407 /* toggle desktop */), IntPtr.Zero)) return;
         try
         {
             // The command Explorer's own show-desktop button runs, so no fake key presses that a game or Start could eat

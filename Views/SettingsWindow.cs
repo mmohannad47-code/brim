@@ -136,8 +136,8 @@ public sealed class SettingsWindow : Window
             S.Shape == NotchShape.Island
                 ? Row("Distance from the top", null, SliderCtl(0, 40, S.IslandTop, v => { S.IslandTop = Math.Round(v); Commit(false); }))
                 : null,
-            Row("Surface", "Glass blurs what's behind it. Clear is invisible until you open it.",
-                Chips(new[] { "Solid", "Glass", "Clear" }, S.NotchSurface, v => { S.NotchSurface = v; Commit(); })),
+            Row("Surface", "Glass blurs what's behind it. Crystal is clearer glass. Clear is invisible until you open it, then opens as Crystal.",
+                Chips(new[] { "Solid", "Glass", "Crystal", "Clear" }, S.NotchSurface, v => { S.NotchSurface = v; Commit(); })),
             Row("When closed, show", null,
                 Chips(new[] { "Clock", "Date", "Battery", "Weather", "Cpu", "Nothing" }, S.Face.ToString(), v => { S.Face = Enum.Parse<RestingFace>(v); Commit(); })),
             Row("Live activities", "Pops out for volume changes, charging, switching to headphones, mic mute and the focus timer",
@@ -655,7 +655,7 @@ public sealed class SettingsWindow : Window
                 ColourPicker(S.DockColor, v => { S.DockColor = v; Commit(); Rebuild(); }, v => { S.DockColor = v; Commit(false); }, SurfaceColors, "Theme")));
 
         Section("Widgets");
-        Card(Row("Default widget look", "Glass and Frost blur the wallpaper behind them. Each widget can also have its own look (Widgets page).",
+        Card(Row("Default widget look", "Glass, Crystal and Frost blur the wallpaper behind them. Each widget can also have its own look (Widgets page).",
             Chips(WidgetStyles.Looks.Select(l => l.Name).ToArray(), S.WidgetStyle, v => { S.WidgetStyle = v; Commit(); })));
     }
 
@@ -1641,8 +1641,8 @@ public sealed class SettingsWindow : Window
 
             Section("Dock look and extras");
             Card(
-                Row("Surface", "Glass blurs what's behind the dock. Clear drops the bar so only the icons float.",
-                    Chips(new[] { "Solid", "Glass", "Clear" }, S.DockSurface, v => { S.DockSurface = v; Commit(); })),
+                Row("Surface", "Glass blurs what's behind the dock. Crystal is clearer glass. Clear drops the bar so only the icons float.",
+                    Chips(new[] { "Solid", "Glass", "Crystal", "Clear" }, S.DockSurface, v => { S.DockSurface = v; Commit(); })),
                 Row("Show the clock", "Click it for notifications and the calendar", Switch(S.DockClock, v => { S.DockClock = v; Commit(); })),
                 Row("Show the keyboard language", "ENG, ARA… next to the clock when Windows has more than one. Click it to switch, right-click to pick",
                     Switch(S.DockLanguage, v => { S.DockLanguage = v; Commit(); })),

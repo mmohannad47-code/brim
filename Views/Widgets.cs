@@ -28,6 +28,7 @@ public static class WidgetStyles
     public static readonly WidgetLook[] Looks =
     {
         new("Glass",   "#24101014", "#38FFFFFF", "#FFFFFFFF", "#C8FFFFFF", "#33FFFFFF", true,  false),
+        new("Crystal", "#10101014", "#00000000", "#FFFFFFFF", "#E0FFFFFF", "#40FFFFFF", true,  true),
         new("Frost",   "#8CF4F4F8", "#80FFFFFF", "#FF141418", "#B3141418", "#26000000", true,  false),
         new("Tinted",  "#8C0E0E12", "#2EFFFFFF", "#FFF5F5F7", "#B3F5F5F7", "#33FFFFFF", false, false),
         new("Solid",   "",          "#1AFFFFFF", "",          "",          "#33FFFFFF", false, false),
@@ -117,10 +118,10 @@ public sealed class WidgetWindow : Window
         {
             CornerRadius = new CornerRadius(item.Radius),
             Padding = lonelyDay ? new Thickness(8) : new Thickness(20, 16, 20, 18),
-            BorderThickness = new Thickness(lonelyDay ? 0 : look.StrokeWidth),
+            // Glass has no outline: a clean pane
+            BorderThickness = new Thickness(lonelyDay || look.Name is "Glass" or "Crystal" ? 0 : look.StrokeWidth),
             Background = look.Blur && !lonelyDay ? Backdrop.Glass(ThemeManager.Parse(bg), ThemeManager.Parse(bg).A) : new SolidColorBrush(ThemeManager.Parse(bg)),
-            // Glass gets a lit edge; other looks keep their plain outline
-            BorderBrush = look.Name == "Glass" && !lonelyDay && Backdrop.Available ? Backdrop.Rim() : new SolidColorBrush(ThemeManager.Parse(look.Stroke)),
+            BorderBrush = new SolidColorBrush(ThemeManager.Parse(look.Stroke)),
             Child = content,
             Margin = new Thickness(6),
             LayoutTransform = Math.Abs(item.Scale - 1) > 0.01 ? new ScaleTransform(item.Scale, item.Scale) : null,
@@ -136,6 +137,7 @@ public sealed class WidgetWindow : Window
             HwndSource.FromHwnd(hwnd).AddHook(WndProc);
             if (look.Blur && !lonelyDay && Backdrop.Available) backdrop = new Backdrop();
         };
+        Loaded += (_, _) => FitCrystalEdge(lonelyDay);
         Loaded += (_, _) => { PlaceInitially(); Tick(); if (Raised) ApplyRaised(); else SyncBackdrop(true); };
         LocationChanged += (_, _) => SyncBackdrop(false);
         frame.LayoutUpdated += (_, _) => SyncBackdrop(false);
@@ -200,6 +202,21 @@ public sealed class WidgetWindow : Window
 
     void OnOledDim(bool dim) =>
         frame.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(dim ? 0.35 : 1, TimeSpan.FromMilliseconds(dim ? 1500 : 250)));
+
+    /// <summary>
+    /// Crystal is nearly clear, so a frosted rim covers the thin strip along the edge that the blur doesn't reach
+    /// (Windows rounds the blur's corners less than the card's). The padding gives that width back so nothing moves.
+    /// </summary>
+    void FitCrystalEdge(bool lonelyDay)
+    {
+        if (look.Name != "Crystal" || lonelyDay || PresentationSource.FromVisual(frame)?.CompositionTarget is not { } ct) return;
+        double band = Backdrop.EdgeBand(Item.Radius, ct.TransformToDevice.M11);
+        if (band <= 0) return;
+        frame.BorderBrush = Backdrop.CrystalEdge();
+        frame.BorderThickness = new Thickness(band);
+        var p = frame.Padding;
+        frame.Padding = new Thickness(Math.Max(0, p.Left - band), Math.Max(0, p.Top - band), Math.Max(0, p.Right - band), Math.Max(0, p.Bottom - band));
+    }
 
     void SyncBackdrop(bool force)
     {

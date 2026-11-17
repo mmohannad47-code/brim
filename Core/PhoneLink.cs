@@ -62,6 +62,9 @@ public static class PhoneLink
     public static event Action<string>? Connected;
     /// <summary>Files from the phone, saved in Downloads (UI thread).</summary>
     public static event Action<string>? Received;
+    static readonly List<(string path, DateTime at)> got = new();
+    /// <summary>Files the phone sent since Brim started, newest first (only ones still there).</summary>
+    public static List<(string path, DateTime at)> ReceivedFiles() { lock (gate) return got.Where(g => File.Exists(g.path)).ToList(); }
     /// <summary>Text or a link from the phone: text, is it a link, open it now (UI thread).</summary>
     public static event Action<string, bool, bool>? TextReceived;
 
@@ -178,12 +181,46 @@ public static class PhoneLink
 
     // ------------------------------------------------------------------ the home network
 
-    /// <summary>This PC's address on the network a phone would be on (Wi-Fi or cable with a router), skipping VPNs and virtual adapters.</summary>
+    public sealed record Choice(string Name, string Ip, int IfIndex);
+
+    /// <summary>This PC's address on the network a phone would be on: the one you picked (when it's still there), or the best.</summary>
     static (string? ip, int ifIndex) HomeAddress()
+    {
+        var all = Networks();
+        var pick = all.FirstOrDefault(c => c.Ip == SettingsStore.Current.PhoneAddress) ?? all.FirstOrDefault();
+        return pick != null ? (pick.Ip, pick.IfIndex) : (null, -1);
+    }
+
+    /// <summary>Use another of this PC's networks for the phone (a new QR code).</summary>
+    public static void UseNetwork(string ip)
+    {
+        SettingsStore.Current.PhoneAddress = ip;
+        SettingsStore.Save();
+        bool was = On;
+        Stop();
+        if (was) Start();
+    }
+
+    /// <summary>Clear the phone page's "From your PC" list (links and text go, Shelf files stay on the Shelf).</summary>
+    public static void ClearSent()
+    {
+        lock (gate) { posts.Clear(); foreach (var o in offered) hidden.Add(o.id); }
+        lastUse = DateTime.Now;
+        Changed?.Invoke();
+    }
+
+    /// <summary>Links and text sent to the phone, newest first.</summary>
+    public static List<Post> Sent() { lock (gate) return posts.OrderByDescending(p => p.Id).ToList(); }
+
+    /// <summary>Shelf files the phone can see (not cleared from its list).</summary>
+    public static List<string> Offered() { lock (gate) return offered.Where(o => !hidden.Contains(o.id)).Select(o => o.path).ToList(); }
+
+    /// <summary>The networks a phone could reach this PC on (Wi-Fi or cable with a router), best first, skipping VPNs and virtual adapters.</summary>
+    public static List<Choice> Networks()
     {
         try
         {
-            var best = NetworkInterface.GetAllNetworkInterfaces()
+            return NetworkInterface.GetAllNetworkInterfaces()
                 .Where(n => n.OperationalStatus == OperationalStatus.Up &&
                             n.NetworkInterfaceType is NetworkInterfaceType.Wireless80211 or NetworkInterfaceType.Ethernet or NetworkInterfaceType.GigabitEthernet &&
                             !System.Text.RegularExpressions.Regex.IsMatch(n.Description + " " + n.Name, "(?i)virtual|hyper-v|vmware|virtualbox|vpn|tap-|tunnel|wsl|loopback|bluetooth|zerotier|tailscale|hamachi"))
@@ -199,10 +236,10 @@ public static class PhoneLink
                 .Where(x => x.addr != null && IsPrivate(x.addr))
                 .OrderByDescending(x => x.gateway)
                 .ThenByDescending(x => x.n.NetworkInterfaceType == NetworkInterfaceType.Wireless80211)
-                .FirstOrDefault();
-            return best.addr != null ? (best.addr.ToString(), best.index) : (null, -1);
+                .Select(x => new Choice(x.n.Name, x.addr!.ToString(), x.index))
+                .ToList();
         }
-        catch (Exception ex) { Log.Error("phone address", ex); return (null, -1); }
+        catch (Exception ex) { Log.Error("phone address", ex); return new(); }
     }
 
     /// <summary>Is the network on this adapter marked Public in Windows (where the firewall would block the phone anyway)?</summary>
@@ -582,6 +619,7 @@ public static class PhoneLink
             throw;
         }
         Log.Note("phone", $"got {Path.GetFileName(dest)} ({r.Length / 1048576.0:0.0} MB) from the phone");
+        lock (gate) { got.Insert(0, (dest, DateTime.Now)); if (got.Count > 50) got.RemoveAt(got.Count - 1); }
         OnUi(() => Received?.Invoke(dest));
         await Send(s, 200, "application/json", JsonSerializer.SerializeToUtf8Bytes(new { ok = true, name = Path.GetFileName(dest) }));
     }
