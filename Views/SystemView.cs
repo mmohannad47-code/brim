@@ -67,7 +67,12 @@ sealed class SystemView : Grid
 
         // 3. Storage
         var store = new StackPanel();
-        var head = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+        var clean = new Button { Content = "Clean up", FontSize = 11.5, Padding = new Thickness(10, 3, 10, 3), ToolTip = "See what fills your drives and clean what's safe to" };
+        clean.SetResourceReference(StyleProperty, "Pill");
+        clean.Click += (_, _) => StorageWindow.Open();
+        DockPanel.SetDock(clean, Dock.Right);
+        head.Children.Add(clean);
         head.Children.Add(new TextBlock { Text = "", FontFamily = (FontFamily)Application.Current.FindResource("Brim.Icons"), FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
         head.Children.Add(Title("Storage"));
         store.Children.Add(head);
@@ -207,7 +212,13 @@ sealed class SystemView : Grid
                 Grid.SetRow(track, 1);
                 Grid.SetColumnSpan(track, 2);
                 row.Children.Add(track);
-                drives.Children.Add(row);
+                // Click a drive: everything on it, by size, with what can go
+                var hit = new Border { Child = row, Background = Brushes.Transparent, CornerRadius = new CornerRadius(8), Padding = new Thickness(6, 0, 6, 0), Margin = new Thickness(-6, 0, -6, 0), Cursor = System.Windows.Input.Cursors.Hand, ToolTip = "See what's on this drive and clean it up" };
+                hit.MouseEnter += (_, _) => hit.SetResourceReference(Border.BackgroundProperty, "Brim.Hover");
+                hit.MouseLeave += (_, _) => hit.Background = Brushes.Transparent;
+                var name = d.Name;
+                hit.MouseLeftButtonUp += (_, _) => StorageWindow.Open(name);
+                drives.Children.Add(hit);
             }
             catch { }
         }

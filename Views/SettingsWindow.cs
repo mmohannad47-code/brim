@@ -401,6 +401,10 @@ public sealed class SettingsWindow : Window
     bool uninstallBusy;
     System.Threading.CancellationTokenSource? uninstallStop;
     DateTime programsAt;
+    List<Leftover>? leftovers;
+    string leftoversOf = "";
+    readonly HashSet<string> leftoversPicked = new(StringComparer.OrdinalIgnoreCase);
+    string uninstallSort = "name";
 
     /// <summary>Open the Uninstall page with this program ready to remove (from a game's right-click menu).</summary>
     public void ShowUninstall(InstalledProgram p)
@@ -434,6 +438,50 @@ public sealed class SettingsWindow : Window
         H1("Uninstall", "Remove apps and games, and what came with them: the launcher a game brought along, or the helper tools an app installed. Shared pieces that other programs need (DirectX, Visual C++, .NET, Vulkan, anti-cheat…) are never removed.");
         // Read fresh whenever the page is opened (new installs, removals elsewhere), not while a removal is being set up
         if (programs == null || removing == null && !uninstallBusy && (DateTime.Now - programsAt).TotalSeconds > 5) { programs = Uninstaller.Everything(); programsAt = DateTime.Now; }
+
+        // What the last removal left behind (settings, caches, save folders), found by its name
+        if (leftovers is { Count: > 0 })
+        {
+            Section("Left behind by " + leftoversOf);
+            var rows = new List<UIElement?>();
+            foreach (var l in leftovers)
+            {
+                var item = l;
+                rows.Add(Row(item.Path, $"{item.Where} · {StorageScan.Size(item.Size)}",
+                    Switch(leftoversPicked.Contains(item.Path), v => { if (v) leftoversPicked.Add(item.Path); else leftoversPicked.Remove(item.Path); Rebuild(); })));
+            }
+            var picked = leftovers.Where(x => leftoversPicked.Contains(x.Path)).ToList();
+            var buttons = new WrapPanel { Margin = new Thickness(18, 12, 18, 14) };
+            if (picked.Count > 0)
+            {
+                var go = PillBtn($"Move {picked.Count} to the Recycle Bin · {StorageScan.Size(picked.Sum(x => x.Size))}", () =>
+                {
+                    RecycleBin.Send(picked.Select(x => x.Path), new System.Windows.Interop.WindowInteropHelper(this).Handle);
+                    int gone = picked.Count(x => !System.IO.Directory.Exists(x.Path));
+                    Log.Note("uninstall", $"leftovers of {leftoversOf}: {gone} of {picked.Count} recycled");
+                    uninstallStatus = gone == picked.Count ? $"Moved what {leftoversOf} left behind to the Recycle Bin." : $"Moved {gone} of {picked.Count} folders; the others are in use or were kept.";
+                    leftovers = null;
+                    Rebuild();
+                });
+                go.SetResourceReference(BackgroundProperty, "Brim.Accent");
+                go.SetResourceReference(ForegroundProperty, "Brim.OnAccent");
+                go.Margin = new Thickness(0, 0, 6, 0);
+                buttons.Children.Add(go);
+            }
+            var keep = PillBtn("Keep them", () => { leftovers = null; Rebuild(); });
+            buttons.Children.Add(keep);
+            rows.Add(Pad(Dim("Folders with its name that nothing installed uses: usually settings, caches and logs. Check before removing save games you may want back.")));
+            rows.Add(buttons);
+            Card(rows.ToArray());
+        }
+        else if (removing == null && uninstallStatus != null && !uninstallBusy && leftovers != null)
+        {
+            Card(Pad(Dim($"{leftoversOf} didn't leave any folders behind.")));
+        }
+
+        Section("Free up space");
+        Card(Row("Storage", "See what fills your drives, clean caches and temp files, and find big files you no longer need",
+            PillBtn("Open Storage", () => StorageWindow.Open())));
 
         if (removing != null)
         {
@@ -491,9 +539,15 @@ public sealed class SettingsWindow : Window
         {
             list.Children.Clear();
             var q = uninstallQuery.Trim();
-            var shown = programs.Where(p => !Uninstaller.IsFramework(p) &&
-                                            (q.Length == 0 || p.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || p.Publisher.Contains(q, StringComparison.OrdinalIgnoreCase)))
-                                .Take(80).ToList();
+            var matching = programs.Where(p => !Uninstaller.IsFramework(p) &&
+                                            (q.Length == 0 || p.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || p.Publisher.Contains(q, StringComparison.OrdinalIgnoreCase)));
+            matching = uninstallSort switch
+            {
+                "size" => matching.OrderByDescending(p => p.SizeKb),
+                "date" => matching.OrderByDescending(p => p.Installed ?? DateTime.MinValue),
+                _ => matching,
+            };
+            var shown = matching.Take(80).ToList();
             bool first = true;
             foreach (var p in shown)
             {
@@ -513,7 +567,19 @@ public sealed class SettingsWindow : Window
         var searchRow = new Grid { HorizontalAlignment = HorizontalAlignment.Left };
         searchRow.Children.Add(search);
         searchRow.Children.Add(hint);
-        page.Children.Add(searchRow);
+        var sortRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        sortRow.Children.Add(new TextBlock { Text = "Sort", FontSize = 12, Foreground = Gray, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+        foreach (var (id, label) in new[] { ("name", "Name"), ("size", "Size"), ("date", "Newest") })
+        {
+            var rb = new RadioButton { Content = label, GroupName = "uninstallSort", IsChecked = uninstallSort == id, Margin = new Thickness(0, 0, 6, 0) };
+            rb.SetResourceReference(StyleProperty, "Chip");
+            rb.Checked += (_, _) => { uninstallSort = id; Fill(); };
+            sortRow.Children.Add(rb);
+        }
+        var topRow = new StackPanel { Orientation = Orientation.Horizontal };
+        topRow.Children.Add(searchRow);
+        topRow.Children.Add(sortRow);
+        page.Children.Add(topRow);
         page.Children.Add(new Border { Height = 10 });
         var card = new Border { CornerRadius = new CornerRadius(12), Child = list };
         card.SetResourceReference(Border.BackgroundProperty, "Set.Card");
@@ -534,6 +600,20 @@ public sealed class SettingsWindow : Window
         uninstallBusy = false;
         uninstallStatus = string.Join("\n", results.Select(r => (r.removed ? "✓ " : "• ") + r.p.Name + ": " + r.note));
         programs = Uninstaller.Everything();
+        // Look for what they left behind (settings, caches, logs), like Revo's leftovers scan
+        var removed = results.Where(r => r.removed && r.p.Kind != "GameFolder").Select(r => r.p).ToList();
+        if (removed.Count > 0)
+        {
+            var still = programs;
+            leftovers = await System.Threading.Tasks.Task.Run(() => removed.SelectMany(p => Leftovers.Find(p, still))
+                                                                            .GroupBy(l => l.Path, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList());
+            leftoversOf = removed.Count == 1 ? removed[0].Name : $"{removed[0].Name} and {removed.Count - 1} more";
+            leftoversPicked.Clear();
+            // Ticked for you: small leftovers (settings, logs). Not ticked: Documents and LocalLow (often save games) and
+            // anything over 100 MB (could be data you'd want back, like a browser's profile)
+            foreach (var l in leftovers.Where(l => !l.Where.StartsWith("Documents") && !l.Where.Contains("LocalLow") && l.Size < 100L << 20)) leftoversPicked.Add(l.Path);
+            Log.Note("uninstall", $"leftovers of {leftoversOf}: {leftovers.Count} folders, {StorageScan.Size(leftovers.Sum(l => l.Size))}");
+        }
         if (results.All(r => r.removed)) removing = null;
         _ = GameLibrary.Refresh();
         Rebuild();

@@ -51,7 +51,7 @@ The small pill at the top of the screen. **Point at it** (or press **Ctrl+Alt+N*
 | **Clipboard** | The last 40 things you copied. Click to copy again. Right-click the tab to clear it all (pinned items can stay). |
 | **Controls** | Wi-Fi, Bluetooth, mic, volume, output device and brightness. |
 | **Timer** | A focus timer; the notch counts down and pops out when time's up. |
-| **System** | CPU, memory and network over the last minute, your Wi-Fi network and its speed, free space on every drive, plus volume, brightness, mute and dark mode. |
+| **System** | CPU, memory and network over the last minute, your Wi-Fi network and its speed, free space on every drive (click one to see what fills it and clean up), plus volume, brightness, mute and dark mode. |
 | **Phone** | The QR code for your phone, files and text to send, and everything sent each way (see *Your phone* below). |
 | **Docs** | Word, Excel or PowerPoint → PDF, PDF → Word (keeping the layout, or as flowing text) and a PDF editor: reorder, rotate, delete, merge, split, add text, set a password. Drop a file on a tile, or right-click a file on the Shelf. Everything happens on your PC. |
 
@@ -86,6 +86,17 @@ Send photos, videos, files, links and text between your PC and your **iPhone or 
 - **PC → phone:** anything on the Shelf shows on the phone page to view or save (folders come as a zip). Right-click a file in Explorer › **Send to › Phone (Brim)**, or type a link or text in the Phone window and press Send.
 - The phone and PC must be on the same Wi-Fi, set to **Private** in Windows (Settings › Network & internet › Wi-Fi). Allow Brim when Windows asks about the firewall the first time.
 - The QR code holds a secret code: without it the page refuses. Brim only answers devices on your home network, never runs on Public networks, and switches the link off after 15 minutes without your phone. *New QR code* locks out old links.
+
+### Storage and clean up
+
+Click a drive in the notch's **System** tab (or **Clean up** there, or search *Storage* with Ctrl+Space):
+
+- **Clean up**: temporary files, browser and app caches (Chrome, Edge, Firefox, Discord, Steam…), crash dumps, unfinished downloads, old installers in Downloads, the Recycle Bin and old unpacked app copies, each with its size and whether it's safe. Caches and temp files are deleted (apps make them again); your own files go to the Recycle Bin.
+- **Windows system files**: Windows Update downloads, Windows' temp files, crash dumps and the previous Windows installation. Windows asks for administrator permission once.
+- **Folders**: everything on the drive sorted by size (or name, or date), with advice on what each thing is: Windows (leave it), part of an installed app (uninstall it instead), a cache or build output (comes back by itself), or your own big or old files. Right-click to open, show in Explorer, uninstall the app it belongs to, or move it to the Recycle Bin.
+- **Largest files** and **Old big files** (not changed for over a year) across the whole drive.
+
+After you remove an app in **Settings › Uninstall**, Brim looks for the folders it left behind (settings, caches, logs in AppData, ProgramData and Program Files) and offers to move them to the Recycle Bin. The installed list sorts by name, size or newest.
 
 ### Wallpapers
 
@@ -133,7 +144,7 @@ Live wallpapers pause by themselves while a game or maximised window covers the 
 
 ## Privacy
 
-Brim runs on your PC. It only goes online to fetch the things you ask for: wallpapers (wallhaven.cc, Pixabay), game covers (Steam store, SteamGridDB), weather (Open-Meteo, only once you set a city), lyrics (LRCLIB) and website icons for your shortcuts. Notes, clipboard history, messages and settings never leave your PC. Word ⇄ PDF conversions and PDF edits happen on your PC (Word → PDF uses Microsoft Office or LibreOffice if installed); nothing is uploaded. The phone link only works inside your home network and never goes through the internet.
+Brim runs on your PC. Storage scans and clean up happen on your PC too. It only goes online to fetch the things you ask for: wallpapers (wallhaven.cc, Pixabay), game covers (Steam store, SteamGridDB), weather (Open-Meteo, only once you set a city), lyrics (LRCLIB) and website icons for your shortcuts. Notes, clipboard history, messages and settings never leave your PC. Word ⇄ PDF conversions and PDF edits happen on your PC (Word → PDF uses Microsoft Office or LibreOffice if installed); nothing is uploaded. The phone link only works inside your home network and never goes through the internet.
 
 ---
 

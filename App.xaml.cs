@@ -522,7 +522,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test" or "--pins-test" or "--apps-test" or "--tray-test" or "--phone-test" or "--docs-test" or "--pdfedit-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test" or "--pins-test" or "--apps-test" or "--tray-test" or "--phone-test" or "--docs-test" or "--pdfedit-test" or "--storage-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -583,6 +583,10 @@ public partial class App : Application
                                 sb.AppendLine($"{allApps.Count} apps");
                                 foreach (var a in allApps.Where(a => a.Id.Contains(":\\"))) sb.AppendLine($"{a.Name}  ←  {a.Id}");
                             }
+                            break;
+                        case "--storage-test":
+                            SettingsStore.Load();
+                            sb.Append(await Brim.Views.StorageWindow.SelfTest(System.IO.Path.GetDirectoryName(e.Args[1])!));
                             break;
                         case "--pdfedit-test":
                             sb.Append(await Brim.Views.PdfEditorWindow.SelfTest(e.Args[2], e.Args[3], System.IO.Path.GetDirectoryName(e.Args[1])!));
@@ -1297,6 +1301,14 @@ public partial class App : Application
             });
             return;
         }
+        // Started as administrator by the Storage window's "Clean system files": clean, report, quit
+        if (e.Args.Length >= 2 && e.Args[0] == "--clean-system")
+        {
+            try { Cleanup.RunElevated(e.Args[1], e.Args.Skip(2)); }
+            catch (Exception ex) { Log.Error("clean system", ex); }
+            Shutdown();
+            return;
+        }
         if (e.Args.Length >= 1 && e.Args[0] == "--uninstall")
         {
             SettingsStore.Load();
@@ -1452,6 +1464,8 @@ public partial class App : Application
             Updater.InstallNow += InstallUpdate;
             Updater.Start();
             SayIfUpdated();
+            // Old unpacked copies of Brim from earlier updates (about 250 MB each), once things have settled
+            _ = System.Threading.Tasks.Task.Delay(TimeSpan.FromMinutes(2)).ContinueWith(_ => Cleanup.TidyOwnCopies(), System.Threading.Tasks.TaskScheduler.Default);
             WindowsBanners.Start(); // "only pop up in the notch"
             Backdrop.Watch(ApplyAll); // glass falls back to a tint while Windows won't blur (transparency off, energy saver)
             // A Wallpaper Engine video Brim used to play itself: hand it to Wallpaper Engine (it plays its own better)

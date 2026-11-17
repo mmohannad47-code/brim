@@ -183,7 +183,7 @@ public static class Uninstaller
     /// A game's own folder, never something bigger: not a drive, not a Windows / Program Files / user folder (or a
     /// folder just above one), and not a folder that holds other games.
     /// </summary>
-    static bool SafeToRecycle(string folder, List<string> gameFolders)
+    internal static bool SafeToRecycle(string folder, List<string> gameFolders)
     {
         var f = folder.TrimEnd('\\');
         if (f.Length <= 3 || !Path.IsPathRooted(f)) return false;
