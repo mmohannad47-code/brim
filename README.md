@@ -43,7 +43,7 @@ The small pill at the top of the screen. **Point at it** (or press **Ctrl+Alt+N*
 | Tab | What it does |
 |---|---|
 | **Home** | What's playing (Spotify, YouTube, any app with media controls) with cover art, a seek bar, controls and synced lyrics, plus the date, CPU, memory, connected devices' batteries and volume. |
-| **Shortcuts** | Up to 12 apps, folders or websites. Drag an app onto the notch to add it; right-click to remove. The first 9 open with **Ctrl+Alt+1…9**. |
+| **Shortcuts** | Up to 12 apps, folders, websites or Windows places like the Recycle Bin and This PC. Drag an app onto the notch to add it; right-click to remove. The first 9 open with **Ctrl+Alt+1…9**. |
 | **Games** | Every game you have installed, with cover art: Steam, Epic, GOG, Riot, EA, Ubisoft, Battle.net, Xbox, and game folders on any drive. New installs appear by themselves. Right-click a game to launch with DirectX/Vulkan, pick a different exe, change the cover or uninstall it. Drag covers to reorder them; right-click the tab to look for new games now. |
 | **Messages** | Notifications from Discord, Teams, Outlook, WhatsApp and other chat and mail apps. Click one to open it; right-click to mute a person or app. Right-click the tab to clear all messages or snooze pop-ups for an hour or until tomorrow. Turn on **Settings › Messages › Only pop up in the notch** to stop Windows' own corner pop-up for those apps. |
 | **Notes** | A page to type anything. Click the tab and start typing; it saves as you type. |
@@ -119,7 +119,7 @@ Live wallpapers pause by themselves while a game or maximised window covers the 
 | Keys | Does |
 |---|---|
 | **Ctrl+Alt+N** | Open or close the notch |
-| **Ctrl+Space** | Search apps, games, settings and recent files; type a sum to calculate it |
+| **Ctrl+Space** | Search apps, games, settings, Windows places (Recycle Bin, This PC, Downloads…) and recent files; restart, sleep or empty the Recycle Bin; type a sum to calculate it |
 | **Ctrl+Alt+1…9** | Open shortcut 1–9 |
 | **Ctrl+Alt+P** | Play / pause music |
 | **Ctrl+Alt+M** | Mute / unmute the microphone |

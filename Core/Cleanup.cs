@@ -584,6 +584,12 @@ public static class Cleanup
     }
 
     static void EmptyRecycleBin() => SHEmptyRecycleBin(IntPtr.Zero, null, 0x1 | 0x2 | 0x4); // no confirm, no progress, no sound
+
+    /// <summary>From search: Windows asks "Are you sure?" first, as the Recycle Bin's own Empty does.</summary>
+    public static void EmptyRecycleBinAsk()
+    {
+        try { SHEmptyRecycleBin(IntPtr.Zero, null, 0); } catch (Exception ex) { Log.Error("empty recycle bin", ex); }
+    }
 }
 
 /// <summary>Send files and folders to the Recycle Bin (Windows' own way, so they can be put back).</summary>

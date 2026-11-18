@@ -10,11 +10,11 @@ using System.Windows.Media;
 namespace Brim.Core;
 
 /// <summary>An app from the Start menu. Desktop apps carry their exe; Store apps launch by their app id.</summary>
-public sealed record AppEntry(string Name, string Id, string? Exe)
+public sealed record AppEntry(string Name, string Id, string? Exe, bool Place = false)
 {
     /// <summary>What a shortcut or dock pin stores: the real exe when there is one (so the dock can match the
-    /// running window to the pin), otherwise Windows' app id.</summary>
-    public string LaunchPath => Id.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) && Id.Contains(":\\")
+    /// running window to the pin), otherwise Windows' app id. A Windows place is its "shell:" name.</summary>
+    public string LaunchPath => Place ? Id : Id.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) && Id.Contains(":\\")
         ? Id // a desktop or taskbar shortcut: open it as it is (it can carry settings of its own); the dock still matches it to its program
         : Exe ?? "shell:AppsFolder\\" + Id;
 }
@@ -125,6 +125,7 @@ public static class AppCatalog
         }
         catch (Exception ex) { Log.Error("app catalog", ex); }
         AddOthers(list);
+        AddPlaces(list);
         return list.GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase).Select(g => g.OrderByDescending(a => a.Exe != null).First())
                    .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
     }
@@ -182,6 +183,45 @@ public static class AppCatalog
         catch (Exception ex) { Log.Error("app catalog extras", ex); }
     }
 
-    public static ImageSource? Icon(AppEntry a, int size = 32) =>
+    /// <summary>
+    /// Windows places people open like apps but that aren't in the Start menu's app list: Recycle Bin, This PC,
+    /// Control Panel, your folders. Opened by their "shell:" name, which is the same in every language.
+    /// </summary>
+    static readonly (string name, string path)[] Places =
+    {
+        ("Recycle Bin", "shell:RecycleBinFolder"),
+        ("This PC", "shell:MyComputerFolder"),
+        ("Home", "shell:::{f874310e-b6b7-47dc-bc84-b9e6b38f5903}"),
+        ("Control Panel", "shell:ControlPanelFolder"),
+        ("Network", "shell:NetworkPlacesFolder"),
+        ("Network Connections", "shell:ConnectionsFolder"),
+        ("Printers", "shell:PrintersFolder"),
+        ("Programs and Features", "shell:ChangeRemoveProgramsFolder"),
+        ("Fonts", "shell:Fonts"),
+        ("Run", "shell:::{2559a1f3-21d7-11d4-bdaf-00c04f60b9f0}"),
+        ("Desktop folder", "shell:Desktop"),
+        ("Documents", "shell:Personal"),
+        ("Downloads", "shell:Downloads"),
+        ("Pictures", "shell:My Pictures"),
+        ("Screenshots", "shell:Screenshots"),
+        ("Music", "shell:My Music"),
+        ("Videos", "shell:My Video"),
+        ("Startup folder", "shell:Startup"),
+        ("AppData", "shell:AppData"),
+        ("Local AppData", "shell:Local AppData"),
+        (Environment.UserName + " (your user folder)", "shell:Profile"),
+    };
+
+    static void AddPlaces(List<AppEntry> list)
+    {
+        var names = new HashSet<string>(list.Select(a => a.Name), StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, path) in Places)
+        {
+            if (names.Contains(name) || !IconHelper.ShellItemExists(path)) continue; // the Start menu's own entry wins
+            list.Add(new AppEntry(name, path, null, Place: true));
+        }
+    }
+
+    public static ImageSource? Icon(AppEntry a, int size = 32) => a.Place ? IconHelper.ForShellItem(a.Id, size) :
         IconHelper.ForShellItem("shell:AppsFolder\\" + a.Id, size) ?? (a.Exe != null ? IconHelper.ForPath(a.Exe) : null);
 }

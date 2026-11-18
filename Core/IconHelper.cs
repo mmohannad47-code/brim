@@ -79,6 +79,19 @@ public static class IconHelper
         return result;
     }
 
+    /// <summary>Whether the shell knows this name on this PC (a "shell:" place like Screenshots exists only once it's been used).</summary>
+    public static bool ShellItemExists(string parsingName)
+    {
+        try
+        {
+            var iid = typeof(IShellItemImageFactory).GUID;
+            if (SHCreateItemFromParsingName(parsingName, IntPtr.Zero, ref iid, out var item) != 0) return false;
+            if (item != null) Marshal.ReleaseComObject(item);
+            return true;
+        }
+        catch { return false; }
+    }
+
     public static bool IsUrl(string path) =>
         path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 

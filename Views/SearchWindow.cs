@@ -20,8 +20,6 @@ public sealed record SearchResult(string Name, string Kind, string? Glyph, Func<
 public sealed class SearchWindow : Window
 {
     static SearchWindow? open;
-    static List<(string name, string target)>? appsCache;
-    static DateTime appsCachedAt;
 
     readonly TextBox box = new() { FontSize = 20, BorderThickness = new Thickness(0), Background = Brushes.Transparent, Foreground = Brushes.White, CaretBrush = Brushes.White };
     readonly TextBlock hint = new() { Text = "Search apps, games, settings and files…", FontSize = 20, IsHitTestVisible = false };
@@ -48,6 +46,8 @@ public sealed class SearchWindow : Window
 
     readonly bool preview;
     bool closing;
+
+    internal IReadOnlyList<SearchResult> Results => results;
 
     SearchWindow(bool preview = false)
     {
@@ -211,15 +211,29 @@ public sealed class SearchWindow : Window
             ("Focus timer · 25 minutes", "Brim", "", null, () => { FocusTimer.Set(TimeSpan.FromMinutes(25)); FocusTimer.StartPause(); }, null),
             ("Take a screenshot", "Brim", "", null, () => app.TakeScreenshot(), null),
             ("Lock this PC", "Windows", "", null, () => Launcher.Open("rundll32.exe", "user32.dll,LockWorkStation"), null),
+            ("Empty Recycle Bin", "Windows", "", () => IconHelper.ForShellItem("shell:RecycleBinFolder", 32), Cleanup.EmptyRecycleBinAsk, null),
         };
     }
 
-    /// <summary>Every app in the Start menu, including Store apps, through the same list Start uses.</summary>
-    static List<(string name, string target)> Apps()
+    [System.Runtime.InteropServices.DllImport("powrprof.dll")]
+    static extern bool SetSuspendState(bool hibernate, bool force, bool disableWakeEvents);
+
+    static void Shutdown(string args)
     {
-        // Shared with the app picker, so the list is only read once
-        return AppCatalog.All().Select(a => (a.Name, a.Id)).ToList();
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("shutdown.exe", args) { UseShellExecute = false, CreateNoWindow = true }); }
+        catch (Exception ex) { Log.Error("shutdown " + args, ex); }
     }
+
+    static (string name, Action run)[] Power() => new (string, Action)[]
+    {
+        ("Restart", () => Shutdown("/r /t 0")),
+        ("Shut down", () => Shutdown("/s /t 0")),
+        ("Sleep", () => SetSuspendState(false, false, false)),
+        ("Sign out", () => Shutdown("/l")),
+    };
+
+    /// <summary>Every app in the Start menu, including Store apps, through the same list Start uses.</summary>
+    static List<AppEntry> Apps() => AppCatalog.All(); // shared with the app picker, so the list is only read once
 
     static readonly Dictionary<string, ImageSource?> appIcons = new();
 
@@ -284,8 +298,8 @@ public sealed class SearchWindow : Window
         var p = g.IconExe ?? g.Exe;
         if (p != null && File.Exists(p) && IconHelper.ForPath(p) is { } icon) return icon;
         // Games started through Steam/Epic usually have a Start menu entry with the game's icon
-        var app = Apps().FirstOrDefault(a => string.Equals(a.name, g.Name, StringComparison.OrdinalIgnoreCase));
-        return app.target != null ? AppIcon(app.target) : null;
+        var app = Apps().FirstOrDefault(a => !a.Place && string.Equals(a.Name, g.Name, StringComparison.OrdinalIgnoreCase));
+        return app != null ? AppIcon(app.Id) : null;
     }
 
     List<SearchResult> Find(string q)
@@ -312,12 +326,23 @@ public sealed class SearchWindow : Window
             if (s > 0) found.Add((s + 6, new SearchResult(g.Name, "Game", "", () => GameIcon(g), () => GameLibrary.Launch(g), g.Source)));
         }
         var gameNames = new HashSet<string>(GameLibrary.Current.Where(g => !g.Hidden).Select(g => g.Name), StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, target) in Apps())
+        foreach (var a in Apps())
         {
-            if (gameNames.Contains(name)) continue; // already listed as a game
-            int s = Score(name, q);
+            if (gameNames.Contains(a.Name)) continue; // already listed as a game
+            int s = Score(a.Name, q);
+            if (s <= 0) continue;
+            // Windows places (Recycle Bin, This PC, your folders) open by their shell name
+            if (a.Place) { found.Add((s + 5, new SearchResult(a.Name, "Windows", "", () => AppCatalog.Icon(a), () => Launcher.Open(a.Id)))); continue; }
+            string name = a.Name, target = a.Id;
             if (s > 0) found.Add((s + 5, new SearchResult(name, "App", "", () => AppIcon(target), () => OpenApp(target))));
         }
+        // Power: only once a few letters are typed, so a stray Enter can't restart the PC
+        if (q.Length >= 3)
+            foreach (var (name, run) in Power())
+            {
+                int s = Score(name, q);
+                if (s > 0) found.Add((s + 1, new SearchResult(name, "Windows", "", null, run)));
+            }
         // Settings, by the words people type ("refresh rate", "pin", "sticky keys"), and Brim's own
         foreach (var e in SettingsIndex.All)
         {

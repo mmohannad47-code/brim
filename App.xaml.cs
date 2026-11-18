@@ -582,6 +582,13 @@ public partial class App : Application
                                 var allApps = AppCatalog.Fresh();
                                 sb.AppendLine($"{allApps.Count} apps");
                                 foreach (var a in allApps.Where(a => a.Id.Contains(":\\"))) sb.AppendLine($"{a.Name}  ←  {a.Id}");
+                                foreach (var a in allApps.Where(a => a.Place)) sb.AppendLine($"place {a.Name}  ←  {a.LaunchPath}  icon: {AppCatalog.Icon(a) != null}");
+                                foreach (var q in new[] { "recycle", "bin", "this pc", "control", "downloads", "restart", "empty", "run" })
+                                {
+                                    var w = Brim.Views.SearchWindow.Preview(q);
+                                    sb.AppendLine($"search {q,-10} → " + string.Join("  |  ", w.Results.Take(4).Select(r => $"{r.Name} [{r.Kind}]")));
+                                    w.Close();
+                                }
                             }
                             break;
                         case "--storage-test":
