@@ -392,6 +392,24 @@ public partial class App : Application
             return;
         }
 
+        if (e.Args.Length == 1 && e.Args[0] == "--chat-sim")
+        {
+            // Developer check (for --open-test): a chat app like Teams, off-screen, with its main window minimised
+            // and a hidden window of its own (the kind that can flash)
+            Dispatcher.InvokeAsync(async () =>
+            {
+                var main = new Window { Left = -4000, Top = 0, Width = 300, Height = 200, WindowStartupLocation = WindowStartupLocation.Manual, Title = "Brim chat sim main", ShowActivated = false };
+                main.Show();
+                main.WindowState = WindowState.Minimized;
+                var hidden = new Window { Left = -4000, Top = 0, Width = 300, Height = 200, WindowStartupLocation = WindowStartupLocation.Manual, Title = "Brim chat sim hidden", ShowActivated = false, ShowInTaskbar = false };
+                hidden.Show();
+                hidden.Hide();
+                await System.Threading.Tasks.Task.Delay(20000);
+                Shutdown();
+            });
+            return;
+        }
+
         if (e.Args.Length == 1 && e.Args[0] == "--flash-test")
         {
             // Developer check: a window off-screen asks for attention the way chat apps do; the running Brim should log it
@@ -540,7 +558,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test" or "--pins-test" or "--apps-test" or "--tray-test" or "--phone-test" or "--docs-test" or "--pdfedit-test" or "--storage-test" or "--front-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test" or "--pins-test" or "--apps-test" or "--tray-test" or "--phone-test" or "--docs-test" or "--pdfedit-test" or "--storage-test" or "--front-test" or "--open-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -609,6 +627,64 @@ public partial class App : Application
                                 }
                             }
                             break;
+                        case "--open-test":
+                        {
+                            // Read-only: what clicking a message in the Messages tab has to work with (nothing is opened)
+                            SettingsStore.Load();
+                            foreach (var (app, rule) in S.MessageApps.Where(kv => kv.Value.AppId != null))
+                            {
+                                var toasts = NotificationStore.ToastsFrom(rule.AppId!);
+                                var newest = toasts.Count > 0 ? NotificationStore.LaunchFor(toasts[0].Id) : null;
+                                sb.AppendLine($"{app} [{rule.AppId}]: {toasts.Count} in Windows' notification centre" +
+                                    (toasts.Count > 0 ? $", newest {toasts[0].Arrived:g} opens via {newest?.Activation}, link {(newest?.Args.Length > 0 ? "yes" : "no")}" : ""));
+                            }
+                            foreach (var (id, n) in NotificationStore.Handlers()) sb.AppendLine($"handler {id}: {n} toast(s)");
+                            foreach (var exe in new[] { "ms-teams", "Teams", "Discord", "WhatsApp", "olk", "OUTLOOK" })
+                                foreach (var p in System.Diagnostics.Process.GetProcessesByName(exe))
+                                {
+                                    using (p)
+                                        Native.EnumWindows((h, _) =>
+                                        {
+                                            if (Native.GetWindowThreadProcessId(h, out uint pid) != 0 && pid == p.Id && Native.TitleOf(h).Length > 0)
+                                                sb.AppendLine($"  window {exe} pid {pid}: {Native.ClassOf(h)} visible {Native.IsWindowVisible(h)} minimised {Native.IsIconic(h)} title {Native.TitleOf(h).Length} chars");
+                                            return true;
+                                        }, IntPtr.Zero);
+                                }
+                            foreach (var w in WindowTracker.TaskbarWindows().Where(w => w.ExePath != null && System.Text.RegularExpressions.Regex.IsMatch(w.ExePath, "(?i)teams|discord|whatsapp|olk|outlook")))
+                                sb.AppendLine($"  taskbar window: {System.IO.Path.GetFileName(w.ExePath)} pid {w.Pid}");
+
+                            // A pretend chat app flashes a hidden window while its main one is minimised (as Teams does)
+                            var before = Native.GetForegroundWindow();
+                            var sim = System.Diagnostics.Process.Start(Environment.ProcessPath!, "--chat-sim");
+                            await System.Threading.Tasks.Task.Delay(3000);
+                            IntPtr simMain = IntPtr.Zero, simHidden = IntPtr.Zero;
+                            Native.EnumWindows((h, _) =>
+                            {
+                                if (Native.GetWindowThreadProcessId(h, out uint pid) != 0 && pid == sim.Id)
+                                {
+                                    var t = Native.TitleOf(h);
+                                    if (t == "Brim chat sim main") simMain = h;
+                                    else if (t == "Brim chat sim hidden") simHidden = h;
+                                }
+                                return true;
+                            }, IntPtr.Zero);
+                            sb.AppendLine($"sim: main {simMain != IntPtr.Zero} (minimised {Native.IsIconic(simMain)}), hidden {simHidden != IntPtr.Zero} (visible {Native.IsWindowVisible(simHidden)})");
+                            // The old way: straight to the window that flashed
+                            Native.ForceForeground(simHidden);
+                            await System.Threading.Tasks.Task.Delay(500);
+                            Native.GetWindowThreadProcessId(Native.GetForegroundWindow(), out uint fp1);
+                            sb.AppendLine($"old way: chat app in front {fp1 == sim.Id}, main still minimised {Native.IsIconic(simMain)}");
+                            if (before != IntPtr.Zero) Native.ForceForeground(before);
+                            await System.Threading.Tasks.Task.Delay(500);
+                            // The new way
+                            MessageCenter.OpenAsIfFlashed(new MessageItem { Id = 999999, App = "Brim chat sim", Sender = "test", Text = "New message", Time = DateTime.Now, Window = simHidden, Pid = (uint)sim.Id });
+                            await System.Threading.Tasks.Task.Delay(1500);
+                            var fg2 = Native.GetForegroundWindow();
+                            sb.AppendLine($"new way: main window in front {fg2 == simMain}, minimised {Native.IsIconic(simMain)}");
+                            if (before != IntPtr.Zero) Native.ForceForeground(before);
+                            try { sim.Kill(); } catch { }
+                            break;
+                        }
                         case "--front-test":
                         {
                             // A window opened while Brim isn't the active app (as from the notch): does it come forward?

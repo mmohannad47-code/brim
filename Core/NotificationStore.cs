@@ -85,6 +85,29 @@ static class NotificationStore
         return new Launch(rows[0][0], Attr("launch"), activation.Length > 0 ? activation : "foreground");
     }
 
+    /// <summary>The notifications Windows still has from this app (its notification centre), newest first.</summary>
+    public static List<(uint Id, DateTime Arrived)> ToastsFrom(string appId)
+    {
+        var list = new List<(uint, DateTime)>();
+        foreach (var r in Query("select n.Id, n.ArrivalTime, h.PrimaryId from Notification n join NotificationHandler h on h.RecordId = n.HandlerId where n.Type = 'toast' order by n.ArrivalTime desc"))
+            if (string.Equals(r[2], appId, StringComparison.OrdinalIgnoreCase) && uint.TryParse(r[0], out var id) && long.TryParse(r[1], out var ft))
+            {
+                DateTime when;
+                try { when = DateTime.FromFileTimeUtc(ft).ToLocalTime(); } catch { when = DateTime.MinValue; }
+                list.Add((id, when));
+            }
+        return list;
+    }
+
+    /// <summary>Every app Windows keeps notifications for, with how many it holds now.</summary>
+    public static List<(string AppId, int Toasts)> Handlers()
+    {
+        var list = new List<(string, int)>();
+        foreach (var r in Query("select h.PrimaryId, (select count(*) from Notification n where n.HandlerId = h.RecordId and n.Type = 'toast'), '' from NotificationHandler h"))
+            list.Add((r[0], int.TryParse(r[1], out var n) ? n : 0));
+        return list;
+    }
+
     [ComImport, Guid("2e941141-7f97-4756-ba1d-9decde894a3d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     interface IApplicationActivationManager
     {

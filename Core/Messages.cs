@@ -844,38 +844,120 @@ public static class MessageCenter
 
     // ------------------------------------------------------------------ actions
 
-    /// <summary>Open the app the message came from.</summary>
+    /// <summary>
+    /// Open the app the message came from, at the message itself when Windows has a link to it (that chat, that
+    /// email), and make sure the app ends up in front: the notch never takes focus, so Windows would otherwise
+    /// only flash the app in the taskbar.
+    /// </summary>
     public static void Open(MessageItem m)
     {
-        if (m.Window != IntPtr.Zero && Native.IsWindow(m.Window))
-        {
-            if (Native.IsIconic(m.Window)) Native.ShowWindow(m.Window, 9 /* SW_RESTORE */);
-            Native.ForceForeground(m.Window);
-            attention.Remove(m);
-            Refilter();
-            return;
-        }
-        if (m.Tray != null)
-        {
-            TrayService.Click(m.Tray, right: false); // the app opens itself, like clicking its tray icon
-            attention.Remove(m);
-            Refilter();
-            return;
-        }
+        var exe = ExeFor(m);
+        var appId = m.AppId ?? (S.MessageApps.TryGetValue(m.App, out var rule) ? rule.AppId : null) ?? AppIdFor(exe);
+        Native.AllowSetForegroundWindow(unchecked((uint)-1)); // whichever app we hand this to may come forward
+        string how;
         if (attention.Contains(m))
         {
-            // From a badge: Windows has no link to the message itself, so open the app (it shows what's unread)
-            if (m.AppId != null) Launcher.Open("shell:AppsFolder\\" + m.AppId);
+            // Seen from a flashing window, a tray badge or an unread count. Those don't say which chat, but the
+            // notification the app sent with it does, if Windows still has it
             attention.Remove(m);
             Refilter();
-            return;
+            var recent = appId == null ? null : NotificationStore.ToastsFrom(appId).Where(t => t.Arrived >= m.Time.AddMinutes(-10)).Select(t => (uint?)t.Id).FirstOrDefault();
+            bool linked = false;
+            if (recent is uint id)
+            {
+                try { linked = NotificationStore.Open(id); } catch (Exception ex) { Log.Error("open message", ex); }
+                if (linked) { var shown = all.FirstOrDefault(x => x.Id == id); if (shown != null) Dismiss(shown); }
+            }
+            if (linked) how = "at the message (from its notification)";
+            else if (BringUp(m.Window, m.Pid, exe)) { how = "its window"; Log.Note("messages", $"opened {m.App}: {how}"); return; }
+            else if (m.Tray != null) { TrayService.Click(m.Tray, right: false); how = "its tray icon"; } // the app opens itself, as clicking its icon does
+            else if (StartApp(appId, exe)) how = "started it (no window to switch to)";
+            else { Log.Note("messages", $"couldn't open {m.App}: no window, tray icon or app id"); return; }
         }
-        // A notification: do what clicking it in Windows does (open that chat / email), else at least open the app
-        bool opened = false;
-        try { opened = NotificationStore.Open(m.Id); } catch (Exception ex) { Log.Error("open message", ex); }
-        Log.Note("messages", $"opened a {m.App} message {(opened ? "where it points" : "(no link to it: opened the app)")}");
-        if (!opened && m.AppId != null) Launcher.Open("shell:AppsFolder\\" + m.AppId);
-        if (opened) Dismiss(m); // as in Windows: a notification you've opened leaves the notification centre
+        else
+        {
+            // A notification: do what clicking it in Windows does (open that chat / email), else at least open the app
+            bool opened = false;
+            try { opened = NotificationStore.Open(m.Id); } catch (Exception ex) { Log.Error("open message", ex); }
+            if (opened) Dismiss(m); // as in Windows: a notification you've opened leaves the notification centre
+            else if (!BringUp(IntPtr.Zero, 0, exe)) StartApp(appId, exe);
+            how = opened ? "at the message" : "no link to the message: opened the app";
+        }
+        Log.Note("messages", $"opened {m.App}: {how}");
+        if (exe != null) FollowUp(exe);
+    }
+
+    /// <summary>For the self-test: open a message as if its app had just flashed.</summary>
+    internal static void OpenAsIfFlashed(MessageItem m) { attention.Add(m); Open(m); }
+
+    /// <summary>The program behind a message: its window's, its tray icon's, or its Windows app id's.</summary>
+    static string? ExeFor(MessageItem m)
+    {
+        if (m.Window != IntPtr.Zero && Native.GetWindowThreadProcessId(m.Window, out uint wp) != 0 && Native.ProcessPath(wp) is { } fromWindow) return fromWindow;
+        if (m.Pid != 0 && Native.ProcessPath(m.Pid) is { } fromPid) return fromPid;
+        if (m.Tray?.ExePath is { Length: > 0 } fromTray) return fromTray;
+        var id = m.AppId ?? (S.MessageApps.TryGetValue(m.App, out var r) ? r.AppId : null);
+        if (id == null) return null;
+        if (id.Contains('!') && StoreApps.Find("shell:AppsFolder\\" + id)?.Exe is { } store) return store;
+        return AppCatalog.All().FirstOrDefault(a => string.Equals(a.Id, id, StringComparison.OrdinalIgnoreCase))?.Exe;
+    }
+
+    static string? AppIdFor(string? exe)
+    {
+        if (exe == null) return null;
+        if (StoreApps.Find(exe) is { } store) return store.Aumid;
+        return AppCatalog.All().FirstOrDefault(a => !a.Place && string.Equals(a.Exe, exe, StringComparison.OrdinalIgnoreCase))?.Id;
+    }
+
+    /// <summary>
+    /// Switch to the app's window: the one that asked for attention if you can see it, else the app's main window
+    /// (an app can flash a hidden window of its own; switching to that showed nothing). Restored if minimised.
+    /// </summary>
+    static bool BringUp(IntPtr window, uint pid, string? exe)
+    {
+        var wins = WindowTracker.TaskbarWindows();
+        var target = wins.FirstOrDefault(w => w.Hwnd == window)
+                  ?? (pid != 0 ? wins.FirstOrDefault(w => w.Pid == pid) : null)
+                  ?? (exe != null ? wins.FirstOrDefault(w => string.Equals(w.ExePath, exe, StringComparison.OrdinalIgnoreCase)) : null);
+        if (target == null) return false;
+        if (Native.IsIconic(target.Hwnd)) Native.ShowWindow(target.Hwnd, 9 /* SW_RESTORE */);
+        Native.ForceForeground(target.Hwnd);
+        return true;
+    }
+
+    static bool StartApp(string? appId, string? exe)
+    {
+        if (appId != null && (appId.Contains('!') || !appId.Contains('\\'))) { Launcher.Open("shell:AppsFolder\\" + appId); return true; }
+        if (exe != null) { Launcher.Open(exe); return true; }
+        if (appId != null) { Launcher.Open("shell:AppsFolder\\" + appId); return true; }
+        return false;
+    }
+
+    /// <summary>
+    /// Once the app has had a moment to open the chat, check it really came forward. Apps that are asked to show
+    /// something by another program are often only allowed to flash in the taskbar; then Brim brings them up.
+    /// </summary>
+    static async void FollowUp(string exe)
+    {
+        try
+        {
+            for (int i = 0; i < 16; i++)
+            {
+                await System.Threading.Tasks.Task.Delay(250);
+                var fg = Native.GetForegroundWindow();
+                if (Native.GetWindowThreadProcessId(fg, out uint fpid) != 0 && string.Equals(Native.ProcessPath(fpid), exe, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (Native.IsIconic(fg)) Native.ShowWindow(fg, 9 /* SW_RESTORE */);
+                    return; // it's in front
+                }
+                if (i >= 2 && BringUp(IntPtr.Zero, 0, exe))
+                {
+                    Log.Note("messages", $"{System.IO.Path.GetFileName(exe)} didn't come forward by itself: brought it up");
+                    return;
+                }
+            }
+        }
+        catch (Exception ex) { Log.Error("message follow-up", ex); }
     }
 
     public static void Dismiss(MessageItem m)
