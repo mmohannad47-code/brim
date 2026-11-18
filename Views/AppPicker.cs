@@ -158,7 +158,8 @@ public sealed class AppPicker : Window
         };
         Loaded += async (_, _) =>
         {
-            Activate();
+            if (ShowActivated) App.BringToFront(this); // opened from the notch, which never takes focus
+            else Activate();
             search.Focus();
             var apps = await AppCatalog.AllAsync();
             list.Children.Clear();

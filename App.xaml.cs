@@ -69,6 +69,26 @@ public partial class App : Application
         ApplyHotkeys();
     }
 
+    /// <summary>
+    /// Bring one of Brim's windows to the front. The notch and dock never take the keyboard (so typing elsewhere
+    /// isn't interrupted), so a window opened from them isn't allowed to come forward by itself: Windows only
+    /// flashed it in the taskbar. Asked again once it has drawn, in case the first try came too early.
+    /// </summary>
+    public static void BringToFront(Window w)
+    {
+        if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
+        w.Activate();
+        Push(w);
+        w.Dispatcher.BeginInvoke(new Action(() => Push(w)), DispatcherPriority.ApplicationIdle);
+
+        static void Push(Window w)
+        {
+            if (!w.IsVisible || !w.ShowActivated) return;
+            var h = new System.Windows.Interop.WindowInteropHelper(w).Handle;
+            if (h != IntPtr.Zero && Native.GetForegroundWindow() != h) Native.ForceForeground(h);
+        }
+    }
+
     public void ScheduleTrim()
     {
         busyAt = DateTime.Now;
@@ -137,8 +157,7 @@ public partial class App : Application
             gallery.Closed += (_, _) => gallery = null;
             gallery.Show();
         }
-        if (gallery.WindowState == WindowState.Minimized) gallery.WindowState = WindowState.Normal;
-        gallery.Activate();
+        BringToFront(gallery);
         Dispatcher.BeginInvoke(new Action(widgets.CheckDesktop), DispatcherPriority.Background);
     }
 
@@ -155,8 +174,7 @@ public partial class App : Application
             phoneWindow.Closed += (_, _) => { phoneWindow = null; ScheduleTrim(); };
             phoneWindow.Show();
         }
-        if (phoneWindow.WindowState == WindowState.Minimized) phoneWindow.WindowState = WindowState.Normal;
-        phoneWindow.Activate();
+        BringToFront(phoneWindow);
     }
 
     /// <summary>Requests from another copy of Brim (see <see cref="MessageWindow.SendToRunning"/>).</summary>
@@ -522,7 +540,7 @@ public partial class App : Application
             return;
         }
 
-        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test" or "--pins-test" or "--apps-test" or "--tray-test" or "--phone-test" or "--docs-test" or "--pdfedit-test" or "--storage-test")
+        if (e.Args.Length >= 2 && e.Args[0] is "--update-test" or "--mirror-test" or "--banners-test" or "--dock-screens-test" or "--endtask-test" or "--dock-apps-test" or "--accent-test" or "--hotkey-test" or "--memory-test" or "--calc-test" or "--admin-test" or "--lang-test" or "--notch-anim-test" or "--search-test" or "--pins-test" or "--apps-test" or "--tray-test" or "--phone-test" or "--docs-test" or "--pdfedit-test" or "--storage-test" or "--front-test")
         {
             // Developer checks for the newer features; each writes what happened to the file given
             Dispatcher.InvokeAsync(async () =>
@@ -591,6 +609,26 @@ public partial class App : Application
                                 }
                             }
                             break;
+                        case "--front-test":
+                        {
+                            // A window opened while Brim isn't the active app (as from the notch): does it come forward?
+                            // Off-screen, and whatever was in front gets the keyboard back straight away.
+                            var before = Native.GetForegroundWindow();
+                            sb.AppendLine($"in front before: {Native.ClassOf(before)} (Brim's own: {Native.GetWindowThreadProcessId(before, out uint fpid) != 0 && fpid == Environment.ProcessId})");
+                            foreach (bool bring in new[] { false, true })
+                            {
+                                var w = new Window { Left = -4000, Top = 0, Width = 300, Height = 200, WindowStartupLocation = WindowStartupLocation.Manual, ShowInTaskbar = false, Title = "front test" };
+                                w.Show();
+                                if (bring) BringToFront(w); else w.Activate();
+                                await System.Threading.Tasks.Task.Delay(400);
+                                var h = new System.Windows.Interop.WindowInteropHelper(w).Handle;
+                                sb.AppendLine($"{(bring ? "BringToFront" : "Show + Activate")}: in front {Native.GetForegroundWindow() == h}");
+                                w.Close();
+                                if (before != IntPtr.Zero) Native.ForceForeground(before);
+                                await System.Threading.Tasks.Task.Delay(300);
+                            }
+                            break;
+                        }
                         case "--storage-test":
                             SettingsStore.Load();
                             sb.Append(await Brim.Views.StorageWindow.SelfTest(System.IO.Path.GetDirectoryName(e.Args[1])!));
@@ -2037,8 +2075,7 @@ public partial class App : Application
             settings.Show();
         }
         if (page != null) settings.Show(page);
-        if (settings.WindowState == WindowState.Minimized) settings.WindowState = WindowState.Normal;
-        settings.Activate();
+        BringToFront(settings);
         // Brim's own windows don't trigger the window-change hook, so re-check right away
         Dispatcher.BeginInvoke(new Action(widgets.CheckDesktop), DispatcherPriority.Background);
     }

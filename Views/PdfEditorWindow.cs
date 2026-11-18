@@ -56,10 +56,11 @@ public sealed class PdfEditorWindow : Window
 
     public static void Open(string path)
     {
-        if (open.TryGetValue(path, out var w)) { if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal; w.Activate(); return; }
+        if (open.TryGetValue(path, out var w)) { App.BringToFront(w); return; }
         w = new PdfEditorWindow(path);
         open[path] = w;
         w.Show();
+        App.BringToFront(w);
     }
 
     static bool exitGuard;

@@ -53,13 +53,13 @@ public sealed class StorageWindow : Window
     {
         if (open != null)
         {
-            if (open.WindowState == WindowState.Minimized) open.WindowState = WindowState.Normal;
-            open.Activate();
+            App.BringToFront(open);
             if (drive != null && !string.Equals(drive, open.drive, StringComparison.OrdinalIgnoreCase)) open.Pick(drive);
             return;
         }
         open = new StorageWindow(drive ?? Path.GetPathRoot(Environment.GetFolderPath(Environment.SpecialFolder.Windows)) ?? @"C:\");
         open.Show();
+        App.BringToFront(open);
     }
 
     StorageWindow(string firstDrive)
