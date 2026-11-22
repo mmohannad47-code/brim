@@ -281,6 +281,27 @@ public partial class App : Application
         // which was most of the memory use
         if (Environment.GetEnvironmentVariable("BRIM_GPU") != "1") System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
 
+        if (e.Args.Length == 2 && e.Args[0] is "--restart-test" or "--restart-test-back")
+        {
+            // Developer check for crash recovery: ask Windows to bring this process back if it crashes, wait the minute
+            // Windows wants it to have run, then crash the way Brim did (an error while .NET cleans up). The copy Windows
+            // starts again writes "came back" to the file.
+            var file = e.Args[1];
+            if (e.Args[0] == "--restart-test-back") { System.IO.File.AppendAllText(file, $"{DateTime.Now:HH:mm:ss} came back (started again by Windows)\n"); Shutdown(); return; }
+            int hr = Native.RegisterApplicationRestart($"--restart-test-back \"{file}\"", Native.RESTART_NO_PATCH | Native.RESTART_NO_REBOOT);
+            System.IO.File.WriteAllText(file, $"{DateTime.Now:HH:mm:ss} registered (0x{hr:X}), crashing in 65 s\n");
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            new Thread(() =>
+            {
+                Thread.Sleep(65_000);
+                System.IO.File.AppendAllText(file, $"{DateTime.Now:HH:mm:ss} crashing now\n");
+                CrashOnCleanup.Make();
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }) { IsBackground = true }.Start();
+            return;
+        }
+
         if (e.Args.Length == 2 && e.Args[0] == "--backdrop-test")
         {
             // Developer check: does Windows clip the blur layer to its rounded shape? Writes where it is.
@@ -934,6 +955,23 @@ public partial class App : Application
                                 var hits = SettingsIndex.All.Select(e => (e, s: SettingsIndex.Match(e, q))).Where(x => x.s > 0).OrderByDescending(x => x.s).Take(3);
                                 sb.AppendLine($"{q,-16} → " + string.Join("  |  ", hits.Select(h => $"{h.e.Name} ({h.s})")));
                             }
+                            {
+                                // Recent searches: shown newest first with nothing typed, each found again; gone ones left out
+                                SettingsStore.Load();
+                                S.SearchHistory = new()
+                                {
+                                    new() { Query = "xyz brim", Name = "Search the web for “xyz brim”", Kind = "Web" },
+                                    new() { Query = "12*7", Name = "= 84", Kind = "Copy" },
+                                    new() { Query = "no such app", Name = "No Such App 123", Kind = "App" },
+                                    new() { Query = "notep", Name = "Notepad", Kind = "App" },
+                                    new() { Query = "brim set", Name = "Brim settings", Kind = "Brim" },
+                                };
+                                var w = Brim.Views.SearchWindow.Preview("");
+                                sb.AppendLine();
+                                sb.AppendLine("empty box, history (newest first) xyz brim web / 12*7 / gone app / notepad / brim settings:");
+                                foreach (var r in w.Results) sb.AppendLine($"  {r.Kind,-8} {r.Name}{(r.From != null ? "   ← typed “" + r.From.Query + "”" : "")}");
+                                w.Close();
+                            }
                             break;
                         case "--lang-test":
                             foreach (var l in KeyboardLanguage.All()) sb.AppendLine($"installed: {l.Short} {l.Region} · {l.Name} (0x{l.Hkl.ToInt64():X})");
@@ -1430,6 +1468,15 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        // Started as administrator to install or remove the admin helper (minimising Task Manager etc. from the dock)
+        if (e.Args.Length >= 1 && (e.Args[0] == "--admin-helper-setup" || e.Args[0] == "--admin-helper-remove"))
+        {
+            int code = 0;
+            try { if (e.Args[0] == "--admin-helper-setup") code = AdminHelper.SetUpElevated(); else AdminHelper.RemoveElevated(); }
+            catch (Exception ex) { Log.Error("admin helper", ex); code = 1; }
+            Shutdown(code);
+            return;
+        }
         if (e.Args.Length >= 1 && e.Args[0] == "--uninstall")
         {
             SettingsStore.Load();
@@ -1497,6 +1544,10 @@ public partial class App : Application
             return;
         }
         owner = true;
+        // If Brim ever crashes or hangs, Windows starts it again (after it has run a minute), so the dock, notch and
+        // hidden taskbar never stay gone. A normal quit or update doesn't trigger this.
+        if (e.Args.Length >= 1 && e.Args[0] == "--restarted") Log.Note("startup", "Windows started Brim again after it crashed or stopped responding");
+        try { Native.RegisterApplicationRestart("--restarted", Native.RESTART_NO_PATCH | Native.RESTART_NO_REBOOT); } catch { }
 
         DispatcherUnhandledException += (_, ex) => { Log.Error("ui", ex.Exception); ex.Handled = true; };
         EventManager.RegisterClassHandler(typeof(System.Windows.Controls.ScrollViewer), UIElement.PreviewMouseWheelEvent,
@@ -1506,6 +1557,7 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, ex) =>
         {
             Log.Error("fatal", (Exception)ex.ExceptionObject);
+            try { TaskbarManager.RestoreAll(); } catch { } // the taskbar first: the rest may not get the chance
             Restore();
         };
 
@@ -2228,4 +2280,11 @@ public partial class App : Application
         }
         base.OnExit(e);
     }
+}
+
+/// <summary>For --restart-test: an object whose clean-up fails, the way Brim crashed on a Windows object.</summary>
+sealed class CrashOnCleanup
+{
+    public static void Make() => _ = new CrashOnCleanup();
+    ~CrashOnCleanup() => throw new NullReferenceException("restart test: clean-up failed on purpose");
 }

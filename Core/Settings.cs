@@ -75,6 +75,15 @@ public class ShortcutItem
     public bool Admin { get; set; }
 }
 
+/// <summary>One thing opened from Ctrl+Space: what was typed, and which result (by name and kind) was picked.</summary>
+public class SearchPick
+{
+    public string Query { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Kind { get; set; } = "";
+    public DateTime At { get; set; }
+}
+
 /// <summary>How an app's tray icon is clicked: the kind of window it listens on, its icon number, its click message.</summary>
 public class TrayWiring
 {
@@ -193,6 +202,10 @@ public class AppSettings
     public List<string> NotchTabs { get; set; } = new(NotchCatalog.DefaultTabs);
     /// <summary>Every tab this person has been offered (so tabs added in an update show up once, and stay hidden if removed)</summary>
     public List<string> SeenTabs { get; set; } = new();
+    /// <summary>Ctrl+Space: what you opened from search, newest first (what you typed, and the result you picked)</summary>
+    public List<SearchPick> SearchHistory { get; set; } = new();
+    /// <summary>When you said no to setting up the admin helper (minimising Task Manager etc. from the dock); asked again a week later</summary>
+    public DateTime? AdminHelperDeclined { get; set; }
     /// <summary>What the Home tab shows, in order</summary>
     public List<string> HomeItems { get; set; } = new(NotchCatalog.DefaultHome);
 

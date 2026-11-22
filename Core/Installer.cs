@@ -151,6 +151,7 @@ public static class Installer
         try { SettingsStore.Load(); WindowsBanners.RestoreAll(); } catch { } // the running Brim was closed abruptly above
         try { WindowsAccent.Restore(); } catch { } // Windows gets its own accent back
         try { Startup.Set(false); } catch { }
+        try { AdminHelper.RemoveOnUninstall(); } catch { } // only asks for administrator if it was set up
         try { WallpaperEngine.Control("play"); } catch { }
         try { if (File.Exists(StartMenuLink)) File.Delete(StartMenuLink); } catch { }
         try { if (File.Exists(SendToLink)) File.Delete(SendToLink); } catch { }

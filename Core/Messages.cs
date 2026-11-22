@@ -197,7 +197,10 @@ public static class MessageCenter
         if (!started)
         {
             started = true;
-            poll.Tick += async (_, _) => { ClearSeenAttention(); CheckBadges(); HeldBecause(); await Refresh(); };
+            // Windows' own list is read as soon as its notification database changes (WatchDatabase), otherwise only
+            // every 30 s: each read hands back a pile of Windows objects, and reading every 4 s kept hundreds waiting
+            // to be cleaned up (Brim crashed twice while .NET released them)
+            poll.Tick += async (_, _) => { ClearSeenAttention(); CheckBadges(); HeldBecause(); if (DateTime.Now - lastRefresh > TimeSpan.FromSeconds(30)) await Refresh(); };
         }
         if (watcher == null)
         {
@@ -591,27 +594,36 @@ public static class MessageCenter
         }
     }
 
+    static DateTime lastRefresh;
+
     public static async Task Refresh()
     {
         if (busy) return;
         busy = true;
+        lastRefresh = DateTime.Now;
         try
         {
             if (!await EnsureAccess()) { if (all.Count > 0) { all = new(); Refilter(); } return; }
-            var list = await listener!.GetNotificationsAsync(NotificationKinds.Toast);
-            var ids = list.Select(n => n.Id).ToHashSet();
-            // Nothing new or gone: skip the work (this runs every few seconds)
-            if (ids.SetEquals(all.Select(m => m.Id))) { primed = true; return; }
-
-            var fresh = new List<MessageItem>();
-            foreach (var n in list)
+            // Read Windows' list on a background thread: the Windows objects it hands back then live (and are released)
+            // there, never on the UI thread. Only plain values come back.
+            var known = all.Select(m => m.Id).ToHashSet();
+            var l = listener!;
+            var (ids, news) = await Task.Run(async () =>
             {
-                var old = all.FirstOrDefault(m => m.Id == n.Id);
-                if (old != null) { fresh.Add(old); continue; }
-                var item = Read(n);
-                if (item != null) fresh.Add(item);
-            }
-            all = fresh.OrderByDescending(m => m.Time).ToList();
+                var list = await l.GetNotificationsAsync(NotificationKinds.Toast);
+                var ids = new HashSet<uint>();
+                var news = new List<MessageItem>();
+                foreach (var n in list)
+                {
+                    ids.Add(n.Id);
+                    if (!known.Contains(n.Id) && Read(n) is MessageItem item) news.Add(item);
+                }
+                return (ids, news);
+            });
+            // Nothing new or gone: skip the work
+            if (ids.SetEquals(known)) { primed = true; return; }
+
+            all = all.Where(m => ids.Contains(m.Id)).Concat(news).OrderByDescending(m => m.Time).ToList();
 
             Log.Note("messages", $"{all.Count} in Windows' notification centre from {string.Join(", ", all.Select(m => m.App).Distinct())}");
             bool settingsChanged = false;
@@ -662,32 +674,42 @@ public static class MessageCenter
     {
         try
         {
-            var list = await listener!.GetNotificationsAsync(NotificationKinds.Toast);
-            foreach (var n in list)
+            var have = icons.Keys.ToHashSet();
+            if (all.All(m => have.Contains(m.App))) return; // every app's logo is known: no need to ask Windows again
+            var l = listener!;
+            // On a background thread, like Refresh; the logos come back as finished (frozen) pictures
+            var loaded = await Task.Run(async () =>
             {
-                string app;
-                try { app = n.AppInfo?.DisplayInfo?.DisplayName ?? "Other"; } catch { continue; }
-                if (icons.ContainsKey(app)) continue;
-                icons[app] = null;
-                try
+                var got = new Dictionary<string, ImageSource?>();
+                var list = await l.GetNotificationsAsync(NotificationKinds.Toast);
+                foreach (var n in list)
                 {
-                    var logo = n.AppInfo.DisplayInfo.GetLogo(new Windows.Foundation.Size(32, 32));
-                    using var ras = await logo.OpenReadAsync();
-                    using var stream = ras.AsStreamForRead();
-                    var ms = new MemoryStream();
-                    await stream.CopyToAsync(ms);
-                    ms.Position = 0;
-                    var bmp = new BitmapImage();
-                    bmp.BeginInit();
-                    bmp.CacheOption = BitmapCacheOption.OnLoad;
-                    bmp.DecodePixelWidth = 32;
-                    bmp.StreamSource = ms;
-                    bmp.EndInit();
-                    bmp.Freeze();
-                    icons[app] = bmp;
+                    string app;
+                    try { app = n.AppInfo?.DisplayInfo?.DisplayName ?? "Other"; } catch { continue; }
+                    if (have.Contains(app) || got.ContainsKey(app)) continue;
+                    got[app] = null;
+                    try
+                    {
+                        var logo = n.AppInfo.DisplayInfo.GetLogo(new Windows.Foundation.Size(32, 32));
+                        using var ras = await logo.OpenReadAsync();
+                        using var stream = ras.AsStreamForRead();
+                        var ms = new MemoryStream();
+                        await stream.CopyToAsync(ms);
+                        ms.Position = 0;
+                        var bmp = new BitmapImage();
+                        bmp.BeginInit();
+                        bmp.CacheOption = BitmapCacheOption.OnLoad;
+                        bmp.DecodePixelWidth = 32;
+                        bmp.StreamSource = ms;
+                        bmp.EndInit();
+                        bmp.Freeze();
+                        got[app] = bmp;
+                    }
+                    catch { }
                 }
-                catch { }
-            }
+                return got;
+            });
+            foreach (var (app, bmp) in loaded) icons[app] = bmp;
             bool any = false;
             foreach (var m in all)
                 if (m.Icon == null && icons.TryGetValue(m.App, out var ic) && ic != null) { m.Icon = ic; any = true; }
@@ -920,7 +942,7 @@ public static class MessageCenter
                   ?? (pid != 0 ? wins.FirstOrDefault(w => w.Pid == pid) : null)
                   ?? (exe != null ? wins.FirstOrDefault(w => string.Equals(w.ExePath, exe, StringComparison.OrdinalIgnoreCase)) : null);
         if (target == null) return false;
-        if (Native.IsIconic(target.Hwnd)) Native.ShowWindow(target.Hwnd, 9 /* SW_RESTORE */);
+        Native.Restore(target.Hwnd);
         Native.ForceForeground(target.Hwnd);
         return true;
     }
@@ -947,7 +969,7 @@ public static class MessageCenter
                 var fg = Native.GetForegroundWindow();
                 if (Native.GetWindowThreadProcessId(fg, out uint fpid) != 0 && string.Equals(Native.ProcessPath(fpid), exe, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (Native.IsIconic(fg)) Native.ShowWindow(fg, 9 /* SW_RESTORE */);
+                    Native.Restore(fg);
                     return; // it's in front
                 }
                 if (i >= 2 && BringUp(IntPtr.Zero, 0, exe))

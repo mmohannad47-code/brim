@@ -14,7 +14,8 @@ using Brim.Core;
 
 namespace Brim.Views;
 
-public sealed record SearchResult(string Name, string Kind, string? Glyph, Func<ImageSource?>? Icon, Action Run, string? Detail = null);
+/// <param name="From">Set on rows from your search history (Ctrl+Space with nothing typed)</param>
+public sealed record SearchResult(string Name, string Kind, string? Glyph, Func<ImageSource?>? Icon, Action Run, string? Detail = null, SearchPick? From = null);
 
 /// <summary>Ctrl+Space: find and open apps, games, settings, recent files and Brim actions; do quick sums.</summary>
 public sealed class SearchWindow : Window
@@ -117,6 +118,15 @@ public sealed class SearchWindow : Window
             case Key.Down: Select(selected + 1); e.Handled = true; break;
             case Key.Up: Select(selected - 1); e.Handled = true; break;
             case Key.Enter: RunSelected(); e.Handled = true; break;
+            case Key.Delete when box.Text.Length == 0 && selected >= 0 && selected < results.Count && results[selected].From is SearchPick pick:
+                // Take it off the recent list
+                S.SearchHistory.Remove(pick);
+                SettingsStore.Save();
+                int keep = selected;
+                Update();
+                Select(Math.Min(keep, results.Count - 1));
+                e.Handled = true;
+                break;
         }
     }
 
@@ -124,9 +134,33 @@ public sealed class SearchWindow : Window
     {
         if (selected < 0 || selected >= results.Count) return;
         var r = results[selected];
+        if (!preview) Remember(r, box.Text.Trim());
         if (!closing) Close();
         try { r.Run(); } catch (Exception ex) { Log.Error("search run", ex); }
     }
+
+    /// <summary>Put what was opened at the top of the recent list (once: picking it again moves it up).</summary>
+    static void Remember(SearchResult r, string typed)
+    {
+        try
+        {
+            var pick = new SearchPick
+            {
+                // What to search again to find it: what you typed, or its own name when you picked it with nothing typed
+                Query = r.From?.Query ?? (typed.Length > 0 ? typed : r.Name),
+                Name = r.Name,
+                Kind = r.From?.Kind ?? r.Kind,
+                At = DateTime.Now,
+            };
+            S.SearchHistory.RemoveAll(p => string.Equals(p.Name, pick.Name, StringComparison.OrdinalIgnoreCase) && p.Kind == pick.Kind);
+            S.SearchHistory.Insert(0, pick);
+            if (S.SearchHistory.Count > MaxHistory) S.SearchHistory.RemoveRange(MaxHistory, S.SearchHistory.Count - MaxHistory);
+            SettingsStore.Save();
+        }
+        catch (Exception ex) { Log.Error("search history", ex); }
+    }
+
+    const int MaxHistory = 30, ShownHistory = 8;
 
     void Select(int i)
     {
@@ -179,6 +213,7 @@ public sealed class SearchWindow : Window
             Grid.SetColumn(kind, 2);
             g.Children.Add(kind);
             row.Child = g;
+            if (r.From != null) row.ToolTip = "Delete takes it off the recent list";
             row.MouseEnter += (_, _) => Select(index);
             row.MouseLeftButtonUp += (_, _) => { selected = index; RunSelected(); };
             list.Children.Add(row);
@@ -285,12 +320,25 @@ public sealed class SearchWindow : Window
         return 0;
     }
 
+    /// <summary>
+    /// Nothing typed yet: what you opened from search before, newest first (each found again the same way, so it
+    /// opens exactly as it did), then recent games and a few Brim actions.
+    /// </summary>
     List<SearchResult> Suggestions()
     {
-        var games = GameLibrary.Current.Where(g => !g.Hidden).OrderByDescending(g => g.LastPlayed).Take(3)
+        var recent = new List<SearchResult>();
+        foreach (var pick in S.SearchHistory.ToList())
+        {
+            if (recent.Count >= ShownHistory) break;
+            var again = Find(pick.Query, withWeb: pick.Kind == "Web")
+                .FirstOrDefault(r => r.Kind == pick.Kind && string.Equals(r.Name, pick.Name, StringComparison.OrdinalIgnoreCase));
+            if (again != null) recent.Add(again with { Kind = "Recent", From = pick }); // gone (uninstalled, renamed): left out
+        }
+        var names = new HashSet<string>(recent.Select(r => r.Name), StringComparer.OrdinalIgnoreCase);
+        var games = GameLibrary.Current.Where(g => !g.Hidden && !names.Contains(g.Name)).OrderByDescending(g => g.LastPlayed).Take(3)
             .Select(g => new SearchResult(g.Name, "Game", "", () => GameIcon(g), () => GameLibrary.Launch(g)));
-        var actions = BrimActions().Take(3).Select(a => new SearchResult(a.name, a.kind, a.glyph, a.icon, a.run, a.detail));
-        return games.Concat(actions).ToList();
+        var actions = BrimActions().Where(a => !names.Contains(a.name)).Take(3).Select(a => new SearchResult(a.name, a.kind, a.glyph, a.icon, a.run, a.detail));
+        return recent.Concat(games).Concat(actions).Take(Math.Max(6, recent.Count + 2)).ToList();
     }
 
     static ImageSource? GameIcon(GameInfo g)
@@ -302,7 +350,9 @@ public sealed class SearchWindow : Window
         return app != null ? AppIcon(app.Id) : null;
     }
 
-    List<SearchResult> Find(string q)
+    List<string>? recentFiles; // read once per search window (the list is looked through on every key press)
+
+    List<SearchResult> Find(string q, bool withWeb = true)
     {
         var found = new List<(int score, SearchResult r)>();
 
@@ -355,7 +405,7 @@ public sealed class SearchWindow : Window
             if (s > 0) found.Add((s + 2, new SearchResult(a.name, a.kind, a.glyph, a.icon, a.run, a.detail)));
         }
         if (q.Length >= 2)
-            foreach (var lnk in RecentFiles())
+            foreach (var lnk in recentFiles ??= RecentFiles().ToList())
             {
                 var name = Path.GetFileNameWithoutExtension(lnk);
                 int s = Score(name, q);
@@ -364,7 +414,7 @@ public sealed class SearchWindow : Window
 
         var top = found.OrderByDescending(f => f.score).Select(f => f.r)
             .GroupBy(r => r.Kind + "|" + r.Name).Select(g => g.First()).Take(10).ToList();
-        top.Add(new SearchResult($"Search the web for “{q}”", "Web", "", null,
+        if (withWeb) top.Add(new SearchResult($"Search the web for “{q}”", "Web", "", null,
             () => Launcher.Open("https://www.google.com/search?q=" + Uri.EscapeDataString(q))));
         return top;
     }

@@ -3,13 +3,15 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <!-- Newer C#/WinRT (the bridge to Windows APIs like media and notifications): fixes in releasing Windows objects -->
+    <WindowsSdkPackageVersion>10.0.19041.57</WindowsSdkPackageVersion>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>Brim</AssemblyName>
     <RootNamespace>Brim</RootNamespace>
-    <Version>0.6.57</Version>
+    <Version>0.6.60</Version>
     <ApplicationIcon>Assets\brim.ico</ApplicationIcon>
     <!-- Declares Windows 8+ support (needed for the live wallpaper's own layer); keeps WPF's system DPI awareness -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -51,5 +53,20 @@
     <Resource Include="Assets\brim-64.png" />
     <None Remove="Assets\brim-256.png;Assets\brim-512.png" />
   </ItemGroup>
+
+  <!-- The admin helper (Helper\BrimAdmin.cs): a separate tiny .NET Framework exe, compiled by the C# compiler that
+       ships with Windows and carried inside Brim, which installs it into Program Files when you allow it -->
+  <PropertyGroup>
+    <AdminHelperExe>$(BaseIntermediateOutputPath)admin\BrimAdmin.exe</AdminHelperExe>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Helper\**" />
+    <None Remove="Helper\**" />
+    <EmbeddedResource Include="$(AdminHelperExe)" LogicalName="BrimAdmin.exe" Visible="false" />
+  </ItemGroup>
+  <Target Name="BuildAdminHelper" BeforeTargets="BeforeBuild" Inputs="Helper\BrimAdmin.cs" Outputs="$(AdminHelperExe)">
+    <MakeDir Directories="$(BaseIntermediateOutputPath)admin" />
+    <Exec Command="&quot;$(WINDIR)\Microsoft.NET\Framework64\v4.0.30319\csc.exe&quot; -nologo -target:winexe -optimize+ &quot;-out:$(AdminHelperExe)&quot; Helper\BrimAdmin.cs" />
+  </Target>
 
 </Project>

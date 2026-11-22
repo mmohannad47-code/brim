@@ -12,6 +12,9 @@ internal static class Native
     public const long WS_EX_NOACTIVATE = 0x08000000;
     public const long WS_EX_APPWINDOW = 0x40000;
     public const int SW_HIDE = 0, SW_SHOWNORMAL = 1, SW_MINIMIZE = 6, SW_SHOWNA = 8, SW_RESTORE = 9;
+    public const int RESTART_NO_PATCH = 4, RESTART_NO_REBOOT = 8;
+    /// <summary>Ask Windows to start this program again (with these arguments) if it crashes or hangs after running a minute.</summary>
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern int RegisterApplicationRestart(string? commandLine, int flags);
     public static readonly IntPtr HWND_TOPMOST = new(-1);
     public static readonly IntPtr HWND_BOTTOM = new(1);
     public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10;
@@ -123,7 +126,9 @@ internal static class Native
     [DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
     [DllImport("user32.dll")] public static extern bool AddClipboardFormatListener(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool RemoveClipboardFormatListener(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll", SetLastError = true)] public static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr hWnd, bool altTab);
+    [DllImport("user32.dll")] static extern bool EndTask(IntPtr hWnd, bool shutDown, bool force);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern uint RegisterWindowMessage(string name);
     [DllImport("user32.dll")] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, int msg, IntPtr w, IntPtr l, uint flags, uint timeout, out IntPtr result);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SendMessageTimeoutW")] public static extern IntPtr SendMessageTimeoutStr(IntPtr hWnd, int msg, IntPtr w, string l, uint flags, uint timeout, out IntPtr result);
@@ -502,9 +507,26 @@ internal static class Native
         for (int i = keys.Length - 1; i >= 0; i--) keybd_event(keys[i], 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 
+    /// <summary>Un-minimises a window. Windows refuses ShowWindow on an app running as administrator (Task Manager,
+    /// anything started elevated) from a normal app like Brim; the Alt+Tab route still works for those.</summary>
+    public static void Restore(IntPtr hwnd)
+    {
+        if (!IsIconic(hwnd)) return;
+        ShowWindow(hwnd, SW_RESTORE);
+        if (IsIconic(hwnd)) SwitchToThisWindow(hwnd, true);
+    }
+
+    /// <summary>Asks a window to close, like its X. An administrator app (Task Manager) doesn't accept the close
+    /// message from a normal app, so that falls back to EndTask, which is what Windows' own taskbar does.</summary>
+    public static void AskToClose(IntPtr hwnd)
+    {
+        if (PostMessage(hwnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero) || Marshal.GetLastWin32Error() != 5 /* access denied */) return;
+        System.Threading.Tasks.Task.Run(() => EndTask(hwnd, false, false)); // waits for the app, so off the UI thread
+    }
+
     public static void ForceForeground(IntPtr hwnd)
     {
-        if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+        Restore(hwnd);
         if (SetForegroundWindow(hwnd) && GetForegroundWindow() == hwnd) return;
         IntPtr fg = GetForegroundWindow();
         uint fgThread = GetWindowThreadProcessId(fg, out _);

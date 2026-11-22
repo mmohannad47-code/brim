@@ -88,7 +88,7 @@ public sealed class WindowPreview : Window
             head.Children.Add(title);
             var close = new Button { Content = "", Width = 20, Height = 20, FontSize = 9, ToolTip = "Close window" };
             close.SetResourceReference(StyleProperty, "CloseButton");
-            close.Click += (_, _) => { Native.PostMessage(win.Hwnd, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero); Close(); };
+            close.Click += (_, _) => { Native.AskToClose(win.Hwnd); Close(); };
             Grid.SetColumn(close, 2);
             head.Children.Add(close);
             stack.Children.Add(head);

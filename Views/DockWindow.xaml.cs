@@ -1110,10 +1110,16 @@ public partial class DockWindow : Window
             return;
         }
         int idx = app.Windows.FindIndex(w => w.Hwnd == fg);
-        if (startWasOpen) Native.ForceForeground(app.Windows[Math.Max(0, idx)].Hwnd);
+        // A window you just minimised can still be Windows' "active" window (nothing else took over), so it only
+        // counts as in front when it's actually on screen; otherwise the click minimised it again instead of bringing it up
+        if (startWasOpen || (idx >= 0 && Native.IsIconic(fg))) Native.ForceForeground(app.Windows[Math.Max(0, idx)].Hwnd);
         else if (idx >= 0)
         {
-            if (app.Windows.Count == 1) Native.ShowWindow(fg, Native.SW_MINIMIZE);
+            if (app.Windows.Count == 1)
+            {
+                // Windows refuses this for an app running as administrator (Task Manager): the admin helper does it
+                if (!Native.ShowWindow(fg, Native.SW_MINIMIZE) && !Native.IsIconic(fg)) AdminHelper.Minimise(fg);
+            }
             else Native.ForceForeground(app.Windows[(idx + 1) % app.Windows.Count].Hwnd);
         }
         else Native.ForceForeground(app.Windows[0].Hwnd);
@@ -1205,7 +1211,7 @@ public partial class DockWindow : Window
         if (app.Windows.Count > 0)
             menu.Items.Add(Item(app.Windows.Count > 1 ? "Close all windows" : "Close window", () =>
             {
-                foreach (var w in app.Windows) Native.PostMessage(w.Hwnd, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                foreach (var w in app.Windows) Native.AskToClose(w.Hwnd);
             }));
         // End task, like Windows 11's taskbar: stops the app straight away (for one that's stuck or won't close)
         var targets = EndTaskTargets(app);

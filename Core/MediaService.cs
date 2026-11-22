@@ -130,10 +130,35 @@ public sealed class MediaService
         Source = PrettySource(session.SourceAppUserModelId);
         ReadPlayback();
         ReadTimeline();
-        _ = ReadPropsAsync();
+        QueueProps();
     }
 
-    void OnProps(GlobalSystemMediaTransportControlsSession s, MediaPropertiesChangedEventArgs e) => OnUi(() => _ = ReadPropsAsync());
+    void OnProps(GlobalSystemMediaTransportControlsSession s, MediaPropertiesChangedEventArgs e) => OnUi(QueueProps);
+
+    bool propsBusy, propsAgain;
+
+    /// <summary>
+    /// Read the song details once, and if they changed again meanwhile, once more a second later. A browser tab whose
+    /// title counts up (a progress percentage) reports a change every moment; reading each one made a steady stream
+    /// of Windows objects (picture streams) for .NET to clean up.
+    /// </summary>
+    async void QueueProps()
+    {
+        if (propsBusy) { propsAgain = true; return; }
+        propsBusy = true;
+        try
+        {
+            do
+            {
+                propsAgain = false;
+                await ReadPropsAsync();
+                if (propsAgain) await Task.Delay(1000);
+            }
+            while (propsAgain);
+        }
+        catch (Exception ex) { Log.Error("media props", ex); }
+        finally { propsBusy = false; }
+    }
     void OnPlayback(GlobalSystemMediaTransportControlsSession s, PlaybackInfoChangedEventArgs e) => OnUi(() => { ReadPlayback(); PickSession(); });
     void OnTimeline(GlobalSystemMediaTransportControlsSession s, TimelinePropertiesChangedEventArgs e) => OnUi(() => { ReadTimeline(); Changed?.Invoke(); });
 
